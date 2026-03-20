@@ -11,6 +11,35 @@
 </head>
 <body>
 
+  <!-- ===== MODAL LOGIN AKUN ===== -->
+  <div id="authModal" class="modal-overlay active">
+    <div class="modal-box kasir-modal-box">
+      <div class="kasir-modal-header">
+        <span style="font-size:32px">🛒</span>
+        <h2 style="font-family:var(--font-head);font-size:26px;font-weight:800;color:var(--accent)">KasirKu</h2>
+        <p class="kasir-modal-sub">Login untuk mulai menggunakan sistem</p>
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="authEmail" placeholder="kasir1@toko.com"
+          onkeydown="if(event.key==='Enter')document.getElementById('authPassword').focus()" />
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="authPassword" placeholder="••••••••"
+          onkeydown="if(event.key==='Enter')loginAuth()" />
+      </div>
+      <p id="authError" style="color:var(--red);font-size:12px;min-height:16px;text-align:center"></p>
+      <button class="btn btn-primary btn-lg" id="btnLoginAuth" onclick="loginAuth()">Masuk →</button>
+    </div>
+  </div>
+
+  <!-- ===== AUTH USER BAR ===== -->
+  <div id="authUserBar" class="auth-user-bar" style="display:none">
+    <span id="authUserDisplay"></span>
+    <button class="btn-ganti-kasir" onclick="logoutAuth()">Keluar</button>
+  </div>
+
   <!-- ===== MODAL LOGIN KASIR ===== -->
   <div id="kasirModal" class="modal-overlay active" onclick="">
     <div class="modal-box kasir-modal-box">
@@ -309,6 +338,76 @@
     </div>
   </div>
 
+  <!-- ===== OWNER DASHBOARD ===== -->
+  <section class="owner-dashboard" data-tab="owner">
+    <div class="owner-header">
+      <div>
+        <h2>Dashboard Pemilik</h2>
+        <span id="currentDate2" class="date-label"></span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="date" id="ownerFilterDate" onchange="switchOwnerDate()" class="date-filter" />
+        <button class="btn btn-export" onclick="exportExcel(true)">📊 Export Excel</button>
+      </div>
+    </div>
+
+    <!-- Stat Cards -->
+    <div class="owner-stats">
+      <div class="owner-stat-card">
+        <span class="owner-stat-icon">💰</span>
+        <div>
+          <div class="owner-stat-label">Total Omset</div>
+          <div class="owner-stat-value" id="ownerOmset">Rp 0</div>
+        </div>
+      </div>
+      <div class="owner-stat-card">
+        <span class="owner-stat-icon">🧾</span>
+        <div>
+          <div class="owner-stat-label">Transaksi</div>
+          <div class="owner-stat-value" id="ownerTxCount">0</div>
+        </div>
+      </div>
+      <div class="owner-stat-card">
+        <span class="owner-stat-icon">📊</span>
+        <div>
+          <div class="owner-stat-label">Rata-rata/Transaksi</div>
+          <div class="owner-stat-value" id="ownerAvgTx">Rp 0</div>
+        </div>
+      </div>
+      <div class="owner-stat-card">
+        <span class="owner-stat-icon">📦</span>
+        <div>
+          <div class="owner-stat-label">Item Terjual</div>
+          <div class="owner-stat-value" id="ownerItemSold">0</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="owner-tables">
+      <!-- Rekap per Kasir -->
+      <div class="owner-table-wrap">
+        <h3 class="owner-table-title">👨‍💼 Rekap per Kasir</h3>
+        <table class="detail-table">
+          <thead>
+            <tr><th>Kasir</th><th>Shift</th><th>Transaksi</th><th style="text-align:right">Total</th></tr>
+          </thead>
+          <tbody id="ownerKasirTable"></tbody>
+        </table>
+      </div>
+
+      <!-- Barang Terlaris -->
+      <div class="owner-table-wrap">
+        <h3 class="owner-table-title">🔥 Barang Terlaris</h3>
+        <table class="detail-table">
+          <thead>
+            <tr><th>Nama Barang</th><th>Terjual</th><th style="text-align:right">Omset</th></tr>
+          </thead>
+          <tbody id="ownerItemTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
   <!-- Toast Notification -->
   <div id="toast" class="toast"></div>
 
@@ -327,8 +426,12 @@
       <span class="bnav-icon">📋</span>
       <span class="bnav-label">Riwayat</span>
     </button>
+    <button class="bnav-btn" onclick="switchTab('owner')" id="ownerTabBtn" style="display:none">
+      <span class="bnav-icon">👑</span>
+      <span class="bnav-label">Owner</span>
+    </button>
   </nav>
 
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

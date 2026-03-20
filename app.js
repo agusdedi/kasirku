@@ -1,75 +1,155 @@
 /* =============================================
-   SISTEM KASIR — app.js
+   SISTEM KASIR — app.js (Firebase Edition)
    ============================================= */
 
+import { db, auth } from './firebase-config.js';
+import {
+  collection, doc, addDoc, deleteDoc, updateDoc,
+  onSnapshot, query, orderBy, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import {
+  signInWithEmailAndPassword, signOut, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
 // ── STATE ─────────────────────────────────────
-let items        = [];   // daftar barang
-let cart         = [];   // keranjang transaksi aktif
-let transactions = [];   // riwayat transaksi
-let kasirAktif   = null; // { name, shift, loginTime }
+let items        = [];
+let cart         = [];
+let transactions = [];
+let kasirAktif   = null;
+let currentUser  = null;
+let isOwner      = false;
+let unsubItems   = null;
+let unsubTx      = null;
 
 // ── INIT ──────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
-  loadFromStorage();
-  renderItems();
-  renderHistory();
-  updateStats();
   setTodayDate();
+  document.getElementById('filterDate').value = new Date().toISOString().split('T')[0];
 
-  // Set filter date ke hari ini
-  const today = new Date().toISOString().split('T')[0];
-  document.getElementById('filterDate').value = today;
-
-  // Cek apakah kasir sudah login
-  if (kasirAktif) {
-    document.getElementById('kasirModal').classList.remove('active');
-    updateKasirBar();
-  }
-  // Jika belum login, modal tetap tampil (sudah active by default)
-
-  // Init responsive tab (mobile)
-  if (window.innerWidth <= 768) {
-    switchTab('barang');
-  }
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      currentUser = user;
+      isOwner = user.email.startsWith('owner');
+      onLoginSuccess();
+    } else {
+      currentUser = null;
+      showAuthModal();
+    }
+  });
 });
 
 function setTodayDate() {
-  const now = new Date();
   document.getElementById('currentDate').textContent =
-    now.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    new Date().toLocaleDateString('id-ID', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
 }
 
-// ── KASIR ─────────────────────────────────────
-function loginKasir() {
-  const name = document.getElementById('kasirNameInput').value.trim();
-  const shift = document.querySelector('input[name="shift"]:checked').value;
+// ── AUTH ──────────────────────────────────────
+function showAuthModal() {
+  document.getElementById('authModal').classList.add('active');
+  document.getElementById('kasirModal').classList.remove('active');
+  stopListeners();
+}
 
+window.loginAuth = async function() {
+  const email    = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const errEl    = document.getElementById('authError');
+  errEl.textContent = '';
+  if (!email || !password) { errEl.textContent = 'Email dan password wajib diisi.'; return; }
+
+  const btn = document.getElementById('btnLoginAuth');
+  btn.textContent = 'Masuk...';
+  btn.disabled = true;
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+  } catch (e) {
+    errEl.textContent = 'Email atau password salah. Coba lagi.';
+    btn.textContent = 'Masuk →';
+    btn.disabled = false;
+  }
+}
+
+window.logoutAuth = async function() {
+  if (!confirm('Yakin ingin keluar?')) return;
+  kasirAktif = null;
+  localStorage.removeItem('kasir_aktif');
+  stopListeners();
+  await signOut(auth);
+}
+
+function onLoginSuccess() {
+  document.getElementById('authModal').classList.remove('active');
+  if (isOwner) {
+    document.getElementById('ownerTabBtn').style.display = 'flex';
+    document.getElementById('authUserDisplay').textContent = '👑 ' + currentUser.email;
+  } else {
+    document.getElementById('ownerTabBtn').style.display = 'none';
+    document.getElementById('authUserDisplay').textContent = '🔑 ' + currentUser.email;
+  }
+  document.getElementById('authUserBar').style.display = 'flex';
+
+  const k = localStorage.getItem('kasir_aktif');
+  if (k) {
+    kasirAktif = JSON.parse(k);
+    document.getElementById('kasirModal').classList.remove('active');
+    updateKasirBar();
+  } else {
+    document.getElementById('kasirModal').classList.add('active');
+  }
+
+  startListeners();
+  if (window.innerWidth <= 768) switchTab('barang');
+}
+
+function stopListeners() {
+  if (unsubItems) { unsubItems(); unsubItems = null; }
+  if (unsubTx)    { unsubTx();    unsubTx    = null; }
+}
+
+// ── FIRESTORE REALTIME LISTENERS ──────────────
+function startListeners() {
+  unsubItems = onSnapshot(
+    query(collection(db, 'items'), orderBy('createdAt', 'asc')),
+    (snap) => {
+      items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderItems();
+    },
+    (err) => showToast('Gagal sync barang: ' + err.message, 'error')
+  );
+
+  unsubTx = onSnapshot(
+    query(collection(db, 'transactions'), orderBy('createdAt', 'desc')),
+    (snap) => {
+      transactions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderHistory();
+      updateStats();
+      if (isOwner) renderOwnerDashboard();
+    },
+    (err) => showToast('Gagal sync transaksi: ' + err.message, 'error')
+  );
+}
+
+// ── KASIR SESSION ─────────────────────────────
+window.loginKasir = function() {
+  const name  = document.getElementById('kasirNameInput').value.trim();
+  const shift = document.querySelector('input[name="shift"]:checked').value;
   if (!name) {
-    document.getElementById('kasirNameInput').focus();
     document.getElementById('kasirNameInput').style.borderColor = 'var(--red)';
     showToast('Nama kasir wajib diisi!', 'error');
     return;
   }
-
-  kasirAktif = {
-    name,
-    shift,
-    loginTime: new Date().toISOString(),
-  };
-
-  saveToStorage();
+  kasirAktif = { name, shift, loginTime: new Date().toISOString() };
+  localStorage.setItem('kasir_aktif', JSON.stringify(kasirAktif));
   updateKasirBar();
   document.getElementById('kasirModal').classList.remove('active');
   document.getElementById('kasirNameInput').style.borderColor = '';
   showToast(`Selamat bertugas, ${name}! 👋`);
 }
 
-function gantiKasir() {
-  if (!confirm(`Ganti kasir dari "${kasirAktif?.name}"?\nSemua data transaksi tetap tersimpan.`)) return;
+window.gantiKasir = function() {
+  if (!confirm(`Ganti kasir dari "${kasirAktif?.name}"?`)) return;
   kasirAktif = null;
   localStorage.removeItem('kasir_aktif');
-
-  // Reset form login
   document.getElementById('kasirNameInput').value = '';
   document.querySelector('input[name="shift"][value="Pagi (06:00–14:00)"]').checked = true;
   document.getElementById('kasirModal').classList.add('active');
@@ -78,132 +158,79 @@ function gantiKasir() {
 
 function updateKasirBar() {
   if (!kasirAktif) return;
-  const initial = kasirAktif.name.charAt(0).toUpperCase();
-  document.getElementById('kasirAvatar').textContent    = initial;
-  document.getElementById('kasirNameDisplay').textContent = kasirAktif.name;
+  document.getElementById('kasirAvatar').textContent       = kasirAktif.name.charAt(0).toUpperCase();
+  document.getElementById('kasirNameDisplay').textContent  = kasirAktif.name;
   document.getElementById('kasirShiftDisplay').textContent = kasirAktif.shift;
 }
 
-
-function saveToStorage() {
-  localStorage.setItem('kasir_items',        JSON.stringify(items));
-  localStorage.setItem('kasir_transactions', JSON.stringify(transactions));
-  if (kasirAktif) localStorage.setItem('kasir_aktif', JSON.stringify(kasirAktif));
-}
-
-function loadFromStorage() {
-  const i = localStorage.getItem('kasir_items');
-  const t = localStorage.getItem('kasir_transactions');
-  const k = localStorage.getItem('kasir_aktif');
-  if (i) items        = JSON.parse(i);
-  if (t) transactions = JSON.parse(t);
-  if (k) kasirAktif   = JSON.parse(k);
-
-  // Daftar barang dimulai kosong — tambahkan manual
-}
-
 // ── UTILS ─────────────────────────────────────
-function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-}
-
-function formatRp(n) {
-  return 'Rp ' + Math.round(n).toLocaleString('id-ID');
-}
-
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
+function formatRp(n) { return 'Rp ' + Math.round(n).toLocaleString('id-ID'); }
 function showToast(msg, type = 'success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = `toast ${type} show`;
-  setTimeout(() => t.className = 'toast', 2500);
+  setTimeout(() => t.className = 'toast', 2800);
 }
 
 // ── MANAJEMEN BARANG ──────────────────────────
-function addItem() {
+window.addItem = async function() {
   const name     = document.getElementById('itemName').value.trim();
   const price    = parseFloat(document.getElementById('itemPrice').value);
   const stock    = parseInt(document.getElementById('itemStock').value) || 0;
   const category = document.getElementById('itemCategory').value.trim() || 'Umum';
-
-  if (!name)        return showToast('Nama barang wajib diisi!', 'error');
-  if (!price || price <= 0) return showToast('Harga harus lebih dari 0!', 'error');
-
-  items.push({ id: uid(), name, price, stock, category });
-  saveToStorage();
-  renderItems();
-
-  // Reset form
-  cancelEdit();
-  showToast(`"${name}" berhasil ditambahkan!`);
+  if (!name)             return showToast('Nama barang wajib diisi!', 'error');
+  if (!price || price<=0) return showToast('Harga harus lebih dari 0!', 'error');
+  try {
+    await addDoc(collection(db, 'items'), { name, price, stock, category, createdAt: serverTimestamp() });
+    cancelEdit();
+    showToast(`"${name}" berhasil ditambahkan!`);
+  } catch(e) { showToast('Gagal tambah barang: ' + e.message, 'error'); }
 }
 
-function deleteItem(id) {
+window.deleteItem = async function(id) {
   if (!confirm('Hapus barang ini?')) return;
-  items = items.filter(i => i.id !== id);
-  // Juga hapus dari keranjang jika ada
-  cart  = cart.filter(c => c.itemId !== id);
-  saveToStorage();
-  renderItems();
-  renderCart();
-  recalculate();
+  try {
+    await deleteDoc(doc(db, 'items', id));
+    cart = cart.filter(c => c.itemId !== id);
+    renderCart(); recalculate();
+    showToast('Barang dihapus.');
+  } catch(e) { showToast('Gagal hapus: ' + e.message, 'error'); }
 }
 
-function editItem(id) {
+window.editItem = function(id) {
   const item = items.find(i => i.id === id);
   if (!item) return;
-
-  // Isi form dengan data barang yang dipilih
   document.getElementById('itemName').value     = item.name;
   document.getElementById('itemPrice').value    = item.price;
   document.getElementById('itemStock').value    = item.stock;
   document.getElementById('itemCategory').value = item.category;
-
-  // Ganti tombol "Tambah" menjadi "Simpan Perubahan"
   const btn = document.querySelector('.btn-primary[onclick="addItem()"]');
   btn.textContent = '💾 Simpan Perubahan';
   btn.setAttribute('onclick', `saveEditItem('${id}')`);
   btn.style.background = 'var(--accent2)';
   document.getElementById('btnCancelEdit').style.display = 'block';
-
-  // Scroll ke atas agar form terlihat
-  document.querySelector('.sidebar').scrollTo({ top: 0, behavior: 'smooth' });
+  document.querySelector('.sidebar').scrollTo({ top:0, behavior:'smooth' });
   showToast(`Edit mode: "${item.name}"`);
 }
 
-function saveEditItem(id) {
+window.saveEditItem = async function(id) {
   const name     = document.getElementById('itemName').value.trim();
   const price    = parseFloat(document.getElementById('itemPrice').value);
   const stock    = parseInt(document.getElementById('itemStock').value) || 0;
   const category = document.getElementById('itemCategory').value.trim() || 'Umum';
-
-  if (!name)            return showToast('Nama barang wajib diisi!', 'error');
-  if (!price || price <= 0) return showToast('Harga harus lebih dari 0!', 'error');
-
-  const item = items.find(i => i.id === id);
-  if (!item) return;
-
-  item.name     = name;
-  item.price    = price;
-  item.stock    = stock;
-  item.category = category;
-
-  // Update nama & harga di keranjang jika sedang ada
-  cart.forEach(c => {
-    if (c.itemId === id) { c.name = name; c.price = price; }
-  });
-
-  saveToStorage();
-  renderItems();
-  renderCart();
-  recalculate();
-  cancelEdit();
-  showToast(`"${name}" berhasil diperbarui!`);
+  if (!name)             return showToast('Nama barang wajib diisi!', 'error');
+  if (!price || price<=0) return showToast('Harga harus lebih dari 0!', 'error');
+  try {
+    await updateDoc(doc(db, 'items', id), { name, price, stock, category });
+    cart.forEach(c => { if(c.itemId===id) { c.name=name; c.price=price; } });
+    renderCart(); recalculate(); cancelEdit();
+    showToast(`"${name}" berhasil diperbarui!`);
+  } catch(e) { showToast('Gagal update: ' + e.message, 'error'); }
 }
 
-function cancelEdit() {
-  ['itemName','itemPrice','itemStock','itemCategory'].forEach(id => {
-    document.getElementById(id).value = '';
-  });
+window.cancelEdit = function() {
+  ['itemName','itemPrice','itemStock','itemCategory'].forEach(id => { document.getElementById(id).value=''; });
   const btn = document.querySelector('.btn-primary');
   btn.textContent = '+ Tambah Barang';
   btn.setAttribute('onclick', 'addItem()');
@@ -214,25 +241,15 @@ function cancelEdit() {
 function renderItems() {
   const q    = document.getElementById('searchItem').value.toLowerCase();
   const list = document.getElementById('itemList');
-
   if (items.length === 0) {
-    list.innerHTML = `
-      <div style="text-align:center;padding:24px 12px;color:var(--muted)">
-        <div style="font-size:32px;margin-bottom:8px">📦</div>
-        <p style="font-size:12px;line-height:1.6">Belum ada barang.<br/>Tambahkan di form atas.</p>
-      </div>`;
+    list.innerHTML = `<div style="text-align:center;padding:24px 12px;color:var(--muted)"><div style="font-size:32px;margin-bottom:8px">📦</div><p style="font-size:12px;line-height:1.6">Belum ada barang.<br/>Tambahkan di form atas.</p></div>`;
     return;
   }
-
-  const filtered = items.filter(i =>
-    i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q)
-  );
-
+  const filtered = items.filter(i => i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q));
   if (filtered.length === 0) {
     list.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:16px;">Barang tidak ditemukan</p>';
     return;
   }
-
   list.innerHTML = filtered.map(item => `
     <div class="item-card" onclick="addToCart('${item.id}')">
       <div class="item-card-info">
@@ -241,22 +258,20 @@ function renderItems() {
         <div class="item-card-price">${formatRp(item.price)}</div>
       </div>
       <div class="item-card-right" onclick="event.stopPropagation()">
-        <div class="item-card-stock ${item.stock <= 5 ? 'low' : ''}">Stok: ${item.stock}</div>
+        <div class="item-card-stock ${item.stock<=5?'low':''}">Stok: ${item.stock}</div>
         <div class="item-actions">
           <button class="btn-icon btn-edit"   onclick="editItem('${item.id}')"   title="Edit">✏️</button>
           <button class="btn-icon btn-delete" onclick="deleteItem('${item.id}')" title="Hapus">🗑️</button>
         </div>
       </div>
-    </div>
-  `).join('');
+    </div>`).join('');
 }
 
 // ── KERANJANG ─────────────────────────────────
-function addToCart(itemId) {
+window.addToCart = function(itemId) {
   const item = items.find(i => i.id === itemId);
   if (!item) return;
   if (item.stock <= 0) return showToast('Stok habis!', 'error');
-
   const existing = cart.find(c => c.itemId === itemId);
   if (existing) {
     if (existing.qty >= item.stock) return showToast('Stok tidak cukup!', 'error');
@@ -264,168 +279,124 @@ function addToCart(itemId) {
   } else {
     cart.push({ itemId, name: item.name, price: item.price, qty: 1 });
   }
-
-  renderCart();
-  recalculate();
-  showToast(`${item.name} ditambahkan ke keranjang`);
+  renderCart(); recalculate();
+  showToast(`${item.name} ditambahkan`);
 }
 
-function changeQty(itemId, delta) {
+window.changeQty = function(itemId, delta) {
   const entry = cart.find(c => c.itemId === itemId);
   if (!entry) return;
   const item = items.find(i => i.id === itemId);
-
   entry.qty += delta;
-  if (entry.qty <= 0) {
-    cart = cart.filter(c => c.itemId !== itemId);
-  } else if (item && entry.qty > item.stock) {
-    entry.qty = item.stock;
-    showToast('Stok tidak cukup!', 'error');
-  }
-
-  renderCart();
-  recalculate();
+  if (entry.qty <= 0) cart = cart.filter(c => c.itemId !== itemId);
+  else if (item && entry.qty > item.stock) { entry.qty = item.stock; showToast('Stok tidak cukup!','error'); }
+  renderCart(); recalculate();
 }
 
-function removeFromCart(itemId) {
+window.removeFromCart = function(itemId) {
   cart = cart.filter(c => c.itemId !== itemId);
-  renderCart();
-  recalculate();
+  renderCart(); recalculate();
 }
 
-function clearCart() {
-  if (cart.length === 0) return;
+window.clearCart = function() {
+  if (!cart.length) return;
   if (!confirm('Bersihkan semua item di keranjang?')) return;
   cart = [];
-  document.getElementById('cashInput').value = '';
+  ['cashInput','customerName'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('discountInput').value = '0';
-  document.getElementById('customerName').value = '';
-  renderCart();
-  recalculate();
+  renderCart(); recalculate();
 }
 
 function renderCart() {
   const tbody = document.getElementById('cartBody');
   if (cart.length === 0) {
-    tbody.innerHTML = `
-      <tr id="emptyCart">
-        <td colspan="5" class="empty-state">
-          <div>🛍️</div>
-          <p>Keranjang kosong.<br/>Klik barang di sebelah kiri untuk menambahkan.</p>
-        </td>
-      </tr>`;
-    updateCartBadge();
-    return;
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state"><div>🛍️</div><p>Keranjang kosong.<br/>Klik barang di sebelah kiri untuk menambahkan.</p></td></tr>`;
+    updateCartBadge(); return;
   }
-
   tbody.innerHTML = cart.map(c => `
     <tr>
       <td><strong>${c.name}</strong></td>
       <td style="font-family:var(--font-mono);color:var(--muted)">${formatRp(c.price)}</td>
-      <td>
-        <div class="qty-control">
-          <button class="qty-btn" onclick="changeQty('${c.itemId}', -1)">−</button>
-          <span class="qty-value">${c.qty}</span>
-          <button class="qty-btn" onclick="changeQty('${c.itemId}', 1)">+</button>
-        </div>
-      </td>
-      <td class="subtotal-cell">${formatRp(c.price * c.qty)}</td>
+      <td><div class="qty-control">
+        <button class="qty-btn" onclick="changeQty('${c.itemId}',-1)">−</button>
+        <span class="qty-value">${c.qty}</span>
+        <button class="qty-btn" onclick="changeQty('${c.itemId}',1)">+</button>
+      </div></td>
+      <td class="subtotal-cell">${formatRp(c.price*c.qty)}</td>
       <td><button class="remove-btn" onclick="removeFromCart('${c.itemId}')">✕</button></td>
-    </tr>
-  `).join('');
+    </tr>`).join('');
   updateCartBadge();
 }
 
 // ── PERHITUNGAN ───────────────────────────────
-function getSubtotal() {
-  return cart.reduce((sum, c) => sum + c.price * c.qty, 0);
-}
-
+function getSubtotal() { return cart.reduce((s,c) => s + c.price*c.qty, 0); }
 function getTotal() {
-  const sub      = getSubtotal();
-  const discount = parseFloat(document.getElementById('discountInput').value) || 0;
-  return sub * (1 - discount / 100);
+  return getSubtotal() * (1 - (parseFloat(document.getElementById('discountInput').value)||0) / 100);
 }
-
-function recalculate() {
+window.recalculate = function() {
   document.getElementById('subtotalDisplay').textContent = formatRp(getSubtotal());
   document.getElementById('totalDisplay').textContent    = formatRp(getTotal());
   calcChange();
 }
-
-function calcChange() {
-  const cash   = parseFloat(document.getElementById('cashInput').value) || 0;
-  const total  = getTotal();
-  const change = cash - total;
-  const el     = document.getElementById('changeDisplay');
+window.calcChange = function() {
+  const cash = parseFloat(document.getElementById('cashInput').value)||0;
+  const change = cash - getTotal();
+  const el = document.getElementById('changeDisplay');
   el.textContent = formatRp(Math.abs(change));
-  el.className   = 'change-amount' + (change < 0 ? ' negative' : '');
+  el.className = 'change-amount' + (change < 0 ? ' negative' : '');
 }
-
-function setQuickCash(amount) {
-  if (amount === 0) {
-    // Nominal pas
-    document.getElementById('cashInput').value = Math.ceil(getTotal());
-  } else {
-    // Tambahkan ke nominal yang ada
-    const current = parseFloat(document.getElementById('cashInput').value) || 0;
-    document.getElementById('cashInput').value = current + amount;
-  }
+window.setQuickCash = function(amount) {
+  document.getElementById('cashInput').value = amount === 0
+    ? Math.ceil(getTotal())
+    : (parseFloat(document.getElementById('cashInput').value)||0) + amount;
   calcChange();
 }
 
 // ── PROSES TRANSAKSI ──────────────────────────
-function processTransaction() {
-  if (cart.length === 0) return showToast('Keranjang masih kosong!', 'error');
-
-  const total    = getTotal();
-  const cash     = parseFloat(document.getElementById('cashInput').value) || 0;
-  const change   = cash - total;
-  const discount = parseFloat(document.getElementById('discountInput').value) || 0;
-
+window.processTransaction = async function() {
+  if (!cart.length) return showToast('Keranjang masih kosong!', 'error');
+  const total  = getTotal();
+  const cash   = parseFloat(document.getElementById('cashInput').value)||0;
   if (cash < total) return showToast('Uang tidak cukup!', 'error');
 
-  const customer = document.getElementById('customerName').value.trim() || 'Umum';
-  const now      = new Date();
-
-  // Kurangi stok
-  cart.forEach(c => {
-    const item = items.find(i => i.id === c.itemId);
-    if (item) item.stock -= c.qty;
-  });
-
-  // Buat transaksi
-  const tx = {
-    id:        'TRX-' + uid().toUpperCase(),
-    date:      now.toISOString(),
-    customer,
+  const txData = {
+    date:      new Date().toISOString(),
+    customer:  document.getElementById('customerName').value.trim() || 'Umum',
     kasir:     kasirAktif?.name  || 'Tidak diketahui',
     shift:     kasirAktif?.shift || '—',
     items:     JSON.parse(JSON.stringify(cart)),
     subtotal:  getSubtotal(),
-    discount,
-    total,
-    cash,
-    change,
+    discount:  parseFloat(document.getElementById('discountInput').value)||0,
+    total, cash,
+    change:    cash - total,
+    createdAt: serverTimestamp()
   };
-  transactions.push(tx);
 
-  saveToStorage();
-  showReceipt(tx);
+  const btn = document.querySelector('.btn-success.btn-lg');
+  btn.textContent = 'Menyimpan...';
+  btn.disabled = true;
 
-  // Reset
-  cart = [];
-  document.getElementById('cashInput').value     = '';
-  document.getElementById('discountInput').value = '0';
-  document.getElementById('customerName').value  = '';
+  try {
+    const stockUpdates = cart.map(c => {
+      const item = items.find(i => i.id === c.itemId);
+      if (item) return updateDoc(doc(db,'items',c.itemId), { stock: item.stock - c.qty });
+    }).filter(Boolean);
 
-  renderCart();
-  renderItems();
-  renderHistory();
-  updateStats();
-  recalculate();
+    const txRef = await addDoc(collection(db,'transactions'), txData);
+    await Promise.all(stockUpdates);
 
-  showToast('Transaksi berhasil disimpan! ✓');
+    showReceipt({ id: txRef.id, ...txData });
+    cart = [];
+    ['cashInput','customerName'].forEach(id => document.getElementById(id).value='');
+    document.getElementById('discountInput').value = '0';
+    renderCart(); recalculate();
+    showToast('Transaksi berhasil disimpan! ✓');
+  } catch(e) {
+    showToast('Gagal simpan: ' + e.message, 'error');
+  } finally {
+    btn.textContent = '✓ Bayar & Simpan Transaksi';
+    btn.disabled = false;
+  }
 }
 
 // ── STRUK ─────────────────────────────────────
@@ -433,287 +404,222 @@ function showReceipt(tx) {
   const date = new Date(tx.date);
   document.getElementById('receiptDate').textContent     = date.toLocaleString('id-ID');
   document.getElementById('receiptCustomer').textContent = 'Pelanggan: ' + tx.customer;
-  document.getElementById('receiptKasir').textContent    = `Kasir: ${tx.kasir || '—'} | ${tx.shift || '—'}`;
+  document.getElementById('receiptKasir').textContent    = `Kasir: ${tx.kasir} | ${tx.shift}`;
   document.getElementById('receiptSubtotal').textContent  = formatRp(tx.subtotal);
   document.getElementById('receiptTotal').textContent     = formatRp(tx.total);
   document.getElementById('receiptCash').textContent      = formatRp(tx.cash);
   document.getElementById('receiptChange').textContent    = formatRp(tx.change);
-
-  const discountRow = document.getElementById('receiptDiscountRow');
-  if (tx.discount > 0) {
-    discountRow.style.display = 'flex';
-    document.getElementById('receiptDiscount').textContent = tx.discount + '%';
-  } else {
-    discountRow.style.display = 'none';
-  }
-
-  document.getElementById('receiptItems').innerHTML = tx.items.map(i => `
-    <div class="receipt-item">
-      <span class="receipt-item-name">${i.name} x${i.qty}</span>
-      <span class="receipt-item-sub">${formatRp(i.price * i.qty)}</span>
-    </div>
-  `).join('');
-
+  const dRow = document.getElementById('receiptDiscountRow');
+  dRow.style.display = tx.discount > 0 ? 'flex' : 'none';
+  if (tx.discount > 0) document.getElementById('receiptDiscount').textContent = tx.discount + '%';
+  document.getElementById('receiptItems').innerHTML = tx.items.map(i =>
+    `<div class="receipt-item"><span class="receipt-item-name">${i.name} x${i.qty}</span><span class="receipt-item-sub">${formatRp(i.price*i.qty)}</span></div>`
+  ).join('');
   document.getElementById('receiptModal').classList.add('active');
 }
-
-function closeModal(e) {
-  if (e.target.id === 'receiptModal') {
-    document.getElementById('receiptModal').classList.remove('active');
-  }
+window.closeModal = function(e) {
+  if (e.target.id==='receiptModal') document.getElementById('receiptModal').classList.remove('active');
 }
 
 // ── DETAIL TRANSAKSI ──────────────────────────
-function showDetailModal(txId) {
+window.showDetailModal = function(txId) {
   const tx = transactions.find(t => t.id === txId);
   if (!tx) return;
-
   const date = new Date(tx.date);
-  const totalQty = tx.items.reduce((s, i) => s + i.qty, 0);
-
+  const totalQty = tx.items.reduce((s,i) => s+i.qty, 0);
   document.getElementById('detailId').textContent          = tx.id;
-  document.getElementById('detailDate').textContent        = date.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  document.getElementById('detailDate').textContent        = date.toLocaleDateString('id-ID',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   document.getElementById('detailTime').textContent        = date.toLocaleTimeString('id-ID');
   document.getElementById('detailCustomer').textContent    = tx.customer;
   document.getElementById('detailTotalItems').textContent  = totalQty + ' item';
-  document.getElementById('detailKasir').textContent       = tx.kasir  || '—';
-  document.getElementById('detailShift').textContent       = tx.shift  || '—';
+  document.getElementById('detailKasir').textContent       = tx.kasir || '—';
+  document.getElementById('detailShift').textContent       = tx.shift || '—';
   document.getElementById('detailSubtotal').textContent    = formatRp(tx.subtotal);
   document.getElementById('detailTotal').textContent       = formatRp(tx.total);
   document.getElementById('detailCash').textContent        = formatRp(tx.cash);
   document.getElementById('detailChange').textContent      = formatRp(tx.change);
-
-  // Diskon
-  const discRow = document.getElementById('detailDiscountRow');
+  const dRow = document.getElementById('detailDiscountRow');
   if (tx.discount > 0) {
-    discRow.style.display = 'flex';
+    dRow.style.display = 'flex';
     document.getElementById('detailDiscountLabel').textContent = `Diskon (${tx.discount}%)`;
-    document.getElementById('detailDiscountVal').textContent   = '- ' + formatRp(tx.subtotal * tx.discount / 100);
-  } else {
-    discRow.style.display = 'none';
-  }
-
-  // Tabel item
-  document.getElementById('detailTableBody').innerHTML = tx.items.map((item, idx) => `
+    document.getElementById('detailDiscountVal').textContent   = '- ' + formatRp(tx.subtotal*tx.discount/100);
+  } else { dRow.style.display = 'none'; }
+  document.getElementById('detailTableBody').innerHTML = tx.items.map((item,idx) => `
     <tr>
-      <td class="detail-num">${idx + 1}</td>
+      <td class="detail-num">${idx+1}</td>
       <td class="detail-name">${item.name}</td>
       <td class="detail-price">${formatRp(item.price)}</td>
       <td class="detail-qty"><span class="qty-badge">${item.qty}</span></td>
-      <td class="detail-subtotal">${formatRp(item.price * item.qty)}</td>
-    </tr>
-  `).join('');
-
+      <td class="detail-subtotal">${formatRp(item.price*item.qty)}</td>
+    </tr>`).join('');
   document.getElementById('detailModal').classList.add('active');
 }
-
-function closeDetailModal(e) {
-  if (e.target.id === 'detailModal') {
-    document.getElementById('detailModal').classList.remove('active');
-  }
+window.closeDetailModal = function(e) {
+  if (e.target.id==='detailModal') document.getElementById('detailModal').classList.remove('active');
 }
-
-function printDetailReceipt() {
-  window.print();
-}
+window.printDetailReceipt = function() { window.print(); }
 
 // ── RIWAYAT ───────────────────────────────────
 function renderHistory() {
   const filterDate = document.getElementById('filterDate').value;
-  const list       = document.getElementById('historyList');
-
-  let filtered = transactions;
-  if (filterDate) {
-    filtered = transactions.filter(tx =>
-      tx.date.startsWith(filterDate)
-    );
-  }
-
-  filtered = [...filtered].reverse(); // terbaru di atas
-
-  if (filtered.length === 0) {
+  const list = document.getElementById('historyList');
+  let filtered = filterDate ? transactions.filter(tx => tx.date.startsWith(filterDate)) : transactions;
+  if (!filtered.length) {
     list.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:24px;">Belum ada transaksi</p>';
     return;
   }
-
   list.innerHTML = filtered.map(tx => {
     const d = new Date(tx.date);
-    const time = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-    const totalItems = tx.items.reduce((s, i) => s + i.qty, 0);
+    const time = d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
+    const totalItems = tx.items.reduce((s,i) => s+i.qty, 0);
     return `
       <div class="history-card" onclick="showDetailModal('${tx.id}')">
         <div class="history-card-top">
-          <span class="history-id">${tx.id}</span>
+          <span class="history-id">${tx.id.slice(0,12)}...</span>
           <span class="history-time">${time}</span>
         </div>
         <div class="history-customer">${tx.customer}</div>
-        <div class="history-card-kasir">👨‍💼 ${tx.kasir || '—'} · ${tx.shift ? tx.shift.split(' ')[0] : '—'}</div>
+        <div class="history-card-kasir">👨‍💼 ${tx.kasir||'—'} · ${tx.shift?tx.shift.split(' ')[0]:'—'}</div>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span class="history-items-count">${totalItems} item</span>
           <span class="history-total">${formatRp(tx.total)}</span>
         </div>
-      </div>
-    `;
+      </div>`;
   }).join('');
 }
 
 function updateStats() {
   const today = new Date().toISOString().split('T')[0];
   const todayTx = transactions.filter(tx => tx.date.startsWith(today));
-  const revenue  = todayTx.reduce((s, tx) => s + tx.total, 0);
-
   document.getElementById('statCount').textContent   = todayTx.length;
-  document.getElementById('statRevenue').textContent = formatRp(revenue);
+  document.getElementById('statRevenue').textContent = formatRp(todayTx.reduce((s,tx) => s+tx.total, 0));
+}
+
+// ── OWNER DASHBOARD ───────────────────────────
+window.switchOwnerDate = function() { renderOwnerDashboard(); }
+
+function renderOwnerDashboard() {
+  const filterDate = document.getElementById('ownerFilterDate')?.value || new Date().toISOString().split('T')[0];
+  const filtered = filterDate ? transactions.filter(tx => tx.date.startsWith(filterDate)) : transactions;
+
+  const totalOmset    = filtered.reduce((s,tx) => s+tx.total, 0);
+  const totalTx       = filtered.length;
+  const avgTx         = totalTx > 0 ? totalOmset/totalTx : 0;
+  const totalItemSold = filtered.reduce((s,tx) => s+tx.items.reduce((ss,i) => ss+i.qty,0), 0);
+
+  document.getElementById('ownerOmset').textContent   = formatRp(totalOmset);
+  document.getElementById('ownerTxCount').textContent = totalTx;
+  document.getElementById('ownerAvgTx').textContent   = formatRp(avgTx);
+  document.getElementById('ownerItemSold').textContent = totalItemSold;
+
+  // Rekap per kasir
+  const byKasir = {};
+  filtered.forEach(tx => {
+    const k = tx.kasir || 'Unknown';
+    if (!byKasir[k]) byKasir[k] = { count:0, total:0, shift: tx.shift||'—' };
+    byKasir[k].count++;
+    byKasir[k].total += tx.total;
+  });
+  document.getElementById('ownerKasirTable').innerHTML =
+    Object.entries(byKasir).sort((a,b) => b[1].total-a[1].total).map(([name,v]) => `
+      <tr>
+        <td><strong>${name}</strong></td>
+        <td style="color:var(--muted);font-size:12px">${v.shift.split(' ')[0]}</td>
+        <td style="text-align:center">${v.count}</td>
+        <td style="font-family:var(--font-mono);color:var(--accent);text-align:right">${formatRp(v.total)}</td>
+      </tr>`).join('') ||
+    '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:16px">Belum ada data</td></tr>';
+
+  // Top barang terlaris
+  const byItem = {};
+  filtered.forEach(tx => tx.items.forEach(i => {
+    if (!byItem[i.name]) byItem[i.name] = { qty:0, total:0 };
+    byItem[i.name].qty   += i.qty;
+    byItem[i.name].total += i.price * i.qty;
+  }));
+  document.getElementById('ownerItemTable').innerHTML =
+    Object.entries(byItem).sort((a,b) => b[1].qty-a[1].qty).slice(0,8).map(([name,v]) => `
+      <tr>
+        <td><strong>${name}</strong></td>
+        <td style="text-align:center">${v.qty}x</td>
+        <td style="font-family:var(--font-mono);color:var(--accent);text-align:right">${formatRp(v.total)}</td>
+      </tr>`).join('') ||
+    '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:16px">Belum ada data</td></tr>';
 }
 
 // ── EXPORT EXCEL ──────────────────────────────
-function exportExcel() {
-  const filterDate = document.getElementById('filterDate').value;
-
-  let filtered = transactions;
-  if (filterDate) {
-    filtered = transactions.filter(tx => tx.date.startsWith(filterDate));
-  }
-
-  if (filtered.length === 0) {
-    return showToast('Tidak ada transaksi untuk diekspor!', 'error');
-  }
+window.exportExcel = function(fromOwner = false) {
+  const filterDate = fromOwner
+    ? document.getElementById('ownerFilterDate').value
+    : document.getElementById('filterDate').value;
+  let filtered = filterDate ? transactions.filter(tx => tx.date.startsWith(filterDate)) : transactions;
+  if (!filtered.length) return showToast('Tidak ada transaksi untuk diekspor!', 'error');
 
   const wb = XLSX.utils.book_new();
-
-  // ── Sheet 1: Ringkasan Transaksi
-  const summaryRows = filtered.map(tx => ({
-    'ID Transaksi':  tx.id,
-    'Tanggal':       new Date(tx.date).toLocaleDateString('id-ID'),
-    'Waktu':         new Date(tx.date).toLocaleTimeString('id-ID'),
-    'Kasir':         tx.kasir  || '—',
-    'Shift':         tx.shift  || '—',
-    'Customer':      tx.customer,
-    'Subtotal':      tx.subtotal,
-    'Diskon (%)':    tx.discount,
-    'Total':         tx.total,
-    'Uang Diterima': tx.cash,
-    'Kembalian':     tx.change,
-    'Jml Item':      tx.items.reduce((s, i) => s + i.qty, 0),
-  }));
-  const ws1 = XLSX.utils.json_to_sheet(summaryRows);
-  ws1['!cols'] = [
-    {wch:18},{wch:12},{wch:10},{wch:16},{wch:20},
-    {wch:16},{wch:14},{wch:10},{wch:14},{wch:14},{wch:12},{wch:10}
-  ];
+  const ws1 = XLSX.utils.json_to_sheet(filtered.map(tx => ({
+    'ID Transaksi': tx.id, 'Tanggal': new Date(tx.date).toLocaleDateString('id-ID'),
+    'Waktu': new Date(tx.date).toLocaleTimeString('id-ID'),
+    'Kasir': tx.kasir||'—', 'Shift': tx.shift||'—', 'Customer': tx.customer,
+    'Subtotal': tx.subtotal, 'Diskon (%)': tx.discount, 'Total': tx.total,
+    'Uang Diterima': tx.cash, 'Kembalian': tx.change,
+    'Jml Item': tx.items.reduce((s,i) => s+i.qty, 0),
+  })));
   XLSX.utils.book_append_sheet(wb, ws1, 'Ringkasan');
 
-  // ── Sheet 2: Detail per Item
   const detailRows = [];
-  filtered.forEach(tx => {
-    tx.items.forEach(item => {
-      detailRows.push({
-        'ID Transaksi': tx.id,
-        'Tanggal':      new Date(tx.date).toLocaleDateString('id-ID'),
-        'Waktu':        new Date(tx.date).toLocaleTimeString('id-ID'),
-        'Customer':     tx.customer,
-        'Nama Barang':  item.name,
-        'Harga Satuan': item.price,
-        'Qty':          item.qty,
-        'Subtotal':     item.price * item.qty,
-      });
-    });
-  });
-  const ws2 = XLSX.utils.json_to_sheet(detailRows);
-  ws2['!cols'] = [{wch:18},{wch:12},{wch:10},{wch:14},{wch:20},{wch:14},{wch:6},{wch:14}];
-  XLSX.utils.book_append_sheet(wb, ws2, 'Detail Item');
+  filtered.forEach(tx => tx.items.forEach(item => detailRows.push({
+    'ID Transaksi': tx.id, 'Tanggal': new Date(tx.date).toLocaleDateString('id-ID'),
+    'Kasir': tx.kasir||'—', 'Nama Barang': item.name,
+    'Harga Satuan': item.price, 'Qty': item.qty, 'Subtotal': item.price*item.qty,
+  })));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailRows), 'Detail Item');
 
-  // ── Sheet 3: Rekap Harian
   const byDate = {};
   filtered.forEach(tx => {
     const d = tx.date.split('T')[0];
-    if (!byDate[d]) byDate[d] = { count: 0, revenue: 0 };
-    byDate[d].count++;
-    byDate[d].revenue += tx.total;
+    if (!byDate[d]) byDate[d] = { count:0, revenue:0 };
+    byDate[d].count++; byDate[d].revenue += tx.total;
   });
-  const rekapRows = Object.entries(byDate).map(([date, v]) => ({
-    'Tanggal':          date,
-    'Jml Transaksi':    v.count,
-    'Total Pendapatan': v.revenue,
-  }));
-  const ws3 = XLSX.utils.json_to_sheet(rekapRows);
-  ws3['!cols'] = [{wch:14},{wch:16},{wch:18}];
-  XLSX.utils.book_append_sheet(wb, ws3, 'Rekap Harian');
+  XLSX.utils.book_append_sheet(wb,
+    XLSX.utils.json_to_sheet(Object.entries(byDate).map(([date,v]) => ({
+      'Tanggal': date, 'Jml Transaksi': v.count, 'Total Pendapatan': v.revenue
+    }))), 'Rekap Harian');
 
-  // Download
-  const filename = `laporan-kasir-${filterDate || 'semua'}.xlsx`;
-  XLSX.writeFile(wb, filename);
-  showToast(`File "${filename}" berhasil didownload!`);
+  XLSX.writeFile(wb, `laporan-kasir-${filterDate||'semua'}.xlsx`);
+  showToast('File Excel berhasil didownload!');
 }
 
-// ── RESPONSIVE: TAB SWITCHING (Mobile) ────────
-function switchTab(tabName) {
-  const isMobile = window.innerWidth <= 768;
-  if (!isMobile) return;
-
-  // Semua panel
-  document.querySelectorAll('.sidebar, .main, .history-panel').forEach(el => {
-    el.classList.remove('tab-active');
-  });
-
-  // Aktifkan panel yang dipilih
-  const tabMap = {
-    'barang':    '.sidebar',
-    'transaksi': '.main',
-    'riwayat':   '.history-panel',
-  };
-  const target = document.querySelector(tabMap[tabName]);
-  if (target) target.classList.add('tab-active');
-
-  // Update active state bottom nav
+// ── RESPONSIVE ────────────────────────────────
+window.switchTab = function(tabName) {
+  document.querySelectorAll('.sidebar,.main,.history-panel,.owner-dashboard').forEach(el => el.classList.remove('tab-active'));
+  const tabMap = { barang:'.sidebar', transaksi:'.main', riwayat:'.history-panel', owner:'.owner-dashboard' };
+  document.querySelector(tabMap[tabName])?.classList.add('tab-active');
   document.querySelectorAll('.bnav-btn').forEach(btn => btn.classList.remove('active'));
-  const activeBtn = document.getElementById('tab-' + tabName);
-  if (activeBtn) activeBtn.classList.add('active');
+  document.getElementById('tab-'+tabName)?.classList.add('active');
+  if (tabName === 'owner') renderOwnerDashboard();
+}
+
+window.toggleHistory = function() {
+  document.querySelector('.history-panel').classList.toggle('panel-open');
 }
 
 function updateCartBadge() {
+  const totalQty = cart.reduce((s,c) => s+c.qty, 0);
   const badge = document.getElementById('cartBadge');
-  const btnGoToCart = document.getElementById('btnGoToCart');
+  const btnGo = document.getElementById('btnGoToCart');
   const cartCount = document.getElementById('cartCount');
-  const totalQty = cart.reduce((s, c) => s + c.qty, 0);
-
-  if (badge) {
-    if (totalQty > 0) {
-      badge.style.display = 'block';
-      badge.textContent = totalQty > 99 ? '99+' : totalQty;
-    } else {
-      badge.style.display = 'none';
-    }
-  }
-
-  if (btnGoToCart && cartCount) {
-    const isMobile = window.innerWidth <= 768;
-    if (totalQty > 0 && isMobile) {
-      btnGoToCart.style.display = 'block';
-      cartCount.textContent = totalQty;
-    } else {
-      btnGoToCart.style.display = 'none';
-    }
+  if (badge) { badge.style.display = totalQty>0?'block':'none'; badge.textContent = totalQty>99?'99+':totalQty; }
+  if (btnGo && cartCount) {
+    btnGo.style.display = (totalQty>0 && window.innerWidth<=768) ? 'block' : 'none';
+    cartCount.textContent = totalQty;
   }
 }
 
-// ── TABLET: Toggle history panel ──────────────
-function toggleHistory() {
-  const panel = document.querySelector('.history-panel');
-  panel.classList.toggle('panel-open');
-}
-
-// Init responsive pada load
 window.addEventListener('resize', () => {
-  const isMobile = window.innerWidth <= 768;
-  if (!isMobile) {
-    // Reset semua panel ke tampilan normal
-    document.querySelectorAll('.sidebar, .main, .history-panel').forEach(el => {
-      el.classList.remove('tab-active');
-    });
+  if (window.innerWidth > 768) {
+    document.querySelectorAll('.sidebar,.main,.history-panel,.owner-dashboard').forEach(el => el.classList.remove('tab-active'));
   } else {
-    // Pastikan ada satu tab aktif
-    const hasActive = document.querySelector('.sidebar.tab-active, .main.tab-active, .history-panel.tab-active');
+    const hasActive = document.querySelector('.sidebar.tab-active,.main.tab-active,.history-panel.tab-active,.owner-dashboard.tab-active');
     if (!hasActive) switchTab('barang');
   }
 });
