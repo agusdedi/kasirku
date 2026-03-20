@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sistem Kasir</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+  <!-- ===== MODAL LOGIN KASIR ===== -->
+  <div id="kasirModal" class="modal-overlay active" onclick="">
+    <div class="modal-box kasir-modal-box">
+      <div class="kasir-modal-header">
+        <span class="brand-icon" style="font-size:32px">🛒</span>
+        <h2>KasirKu</h2>
+        <p class="kasir-modal-sub">Masukkan nama kasir yang bertugas</p>
+      </div>
+      <div class="form-group">
+        <label>Nama Kasir</label>
+        <input type="text" id="kasirNameInput" placeholder="Contoh: Budi Santoso"
+          onkeydown="if(event.key==='Enter') loginKasir()" autofocus />
+      </div>
+      <div class="form-group">
+        <label>Shift</label>
+        <div class="shift-options">
+          <label class="shift-opt">
+            <input type="radio" name="shift" value="Pagi (06:00–14:00)" checked /> Pagi
+          </label>
+          <label class="shift-opt">
+            <input type="radio" name="shift" value="Siang (14:00–22:00)" /> Siang
+          </label>
+          <label class="shift-opt">
+            <input type="radio" name="shift" value="Malam (22:00–06:00)" /> Malam
+          </label>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-lg" onclick="loginKasir()">Mulai Jaga →</button>
+    </div>
+  </div>
+
+  <!-- ===== KASIR INFO BAR ===== -->
+  <div class="kasir-bar" id="kasirBar">
+    <div class="kasir-bar-left">
+      <span class="kasir-avatar" id="kasirAvatar">?</span>
+      <div class="kasir-info">
+        <span class="kasir-name" id="kasirNameDisplay">—</span>
+        <span class="kasir-shift" id="kasirShiftDisplay">—</span>
+      </div>
+    </div>
+    <button class="btn-ganti-kasir" onclick="gantiKasir()" title="Ganti Kasir">⇄ Ganti</button>
+  </div>
+
+  <!-- ===== SIDEBAR KIRI: Manajemen Barang ===== -->
+  <aside class="sidebar" data-tab="barang">
+    <div class="brand">
+      <span class="brand-icon">🛒</span>
+      <h1>KasirKu</h1>
+    </div>
+
+    <!-- Form Tambah Barang -->
+    <section class="panel">
+      <h2 class="panel-title">Tambah Barang</h2>
+      <div class="form-group">
+        <label>Nama Barang</label>
+        <input type="text" id="itemName" placeholder="Contoh: Kopi Hitam" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Harga (Rp)</label>
+          <input type="number" id="itemPrice" placeholder="15000" min="0" />
+        </div>
+        <div class="form-group">
+          <label>Stok</label>
+          <input type="number" id="itemStock" placeholder="50" min="0" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Kategori</label>
+        <input type="text" id="itemCategory" placeholder="Minuman, Makanan, dll" />
+      </div>
+      <button class="btn btn-primary" onclick="addItem()">+ Tambah Barang</button>
+      <button class="btn btn-cancel-edit" id="btnCancelEdit" onclick="cancelEdit()" style="display:none">✕ Batal Edit</button>
+    </section>
+
+    <!-- Daftar Barang -->
+    <section class="panel panel-scroll">
+      <div class="panel-header">
+        <h2 class="panel-title">Daftar Barang</h2>
+        <input type="text" id="searchItem" placeholder="Cari..." oninput="renderItems()" class="search-input" />
+      </div>
+      <div id="itemList" class="item-list"></div>
+    </section>
+    <!-- Shortcut ke Transaksi (Mobile Only) -->
+    <button class="btn btn-success mobile-only" id="btnGoToCart" onclick="switchTab('transaksi')" style="display:none">
+      🛒 Lihat Keranjang (<span id="cartCount">0</span> item)
+    </button>
+  </aside>
+  <main class="main" data-tab="transaksi">
+    <div class="main-header">
+      <div>
+        <h2>Transaksi Baru</h2>
+        <span id="currentDate" class="date-label"></span>
+      </div>
+      <div class="header-actions">
+        <input type="text" id="customerName" placeholder="Nama Customer (opsional)" class="customer-input" />
+        <button class="btn btn-export toggle-history-btn" onclick="toggleHistory()">📋 Riwayat</button>
+        <button class="btn btn-danger" onclick="clearCart()">🗑 Bersihkan</button>
+      </div>
+    </div>
+
+    <!-- Keranjang Belanja -->
+    <div class="cart-wrapper">
+      <table class="cart-table">
+        <thead>
+          <tr>
+            <th>Barang</th>
+            <th>Harga Satuan</th>
+            <th>Qty</th>
+            <th>Subtotal</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="cartBody">
+          <tr id="emptyCart">
+            <td colspan="5" class="empty-state">
+              <div>🛍️</div>
+              <p>Keranjang kosong.<br/>Klik barang di sebelah kiri untuk menambahkan.</p>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Panel Pembayaran -->
+    <div class="payment-panel">
+      <div class="totals">
+        <div class="total-row">
+          <span>Subtotal</span>
+          <span id="subtotalDisplay">Rp 0</span>
+        </div>
+        <div class="total-row discount-row">
+          <span>Diskon (%)</span>
+          <input type="number" id="discountInput" value="0" min="0" max="100" oninput="recalculate()" class="discount-input" />
+        </div>
+        <div class="total-row total-final">
+          <span>TOTAL</span>
+          <span id="totalDisplay">Rp 0</span>
+        </div>
+      </div>
+
+      <div class="payment-input">
+        <div class="form-group">
+          <label>Uang Diterima (Rp)</label>
+          <input type="number" id="cashInput" placeholder="0" oninput="calcChange()" class="cash-input" />
+        </div>
+        <div class="change-display">
+          <span>Kembalian</span>
+          <span id="changeDisplay" class="change-amount">Rp 0</span>
+        </div>
+      </div>
+
+      <!-- Quick Cash Buttons -->
+      <div class="quick-cash">
+        <span class="quick-label">Nominal Cepat:</span>
+        <button onclick="setQuickCash(5000)">5K</button>
+        <button onclick="setQuickCash(10000)">10K</button>
+        <button onclick="setQuickCash(20000)">20K</button>
+        <button onclick="setQuickCash(50000)">50K</button>
+        <button onclick="setQuickCash(100000)">100K</button>
+        <button onclick="setQuickCash(0)" class="exact">Pas</button>
+      </div>
+
+      <button class="btn btn-success btn-lg" onclick="processTransaction()">✓ Bayar & Simpan Transaksi</button>
+    </div>
+  </main>
+
+  <!-- ===== KANAN: Riwayat Transaksi ===== -->
+  <aside class="history-panel" data-tab="riwayat">
+    <div class="history-header">
+      <h2>Riwayat Hari Ini</h2>
+      <div class="history-stats">
+        <div class="stat">
+          <span class="stat-label">Total Transaksi</span>
+          <span class="stat-value" id="statCount">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Total Omset</span>
+          <span class="stat-value" id="statRevenue">Rp 0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="filter-row">
+      <input type="date" id="filterDate" onchange="renderHistory()" class="date-filter" />
+      <button class="btn btn-export" onclick="exportExcel()">📊 Export Excel</button>
+    </div>
+
+    <div id="historyList" class="history-list"></div>
+  </aside>
+
+  <!-- ===== MODAL DETAIL TRANSAKSI ===== -->
+  <div id="detailModal" class="modal-overlay" onclick="closeDetailModal(event)">
+    <div class="modal-box detail-modal-box">
+      <div class="detail-header">
+        <div>
+          <div class="detail-badge">Detail Transaksi</div>
+          <h2 id="detailId" class="detail-id"></h2>
+        </div>
+        <button class="modal-close-btn" onclick="document.getElementById('detailModal').classList.remove('active')">✕</button>
+      </div>
+
+      <div class="detail-meta">
+        <div class="detail-meta-item">
+          <span class="detail-meta-label">📅 Tanggal</span>
+          <span id="detailDate" class="detail-meta-value"></span>
+        </div>
+        <div class="detail-meta-item">
+          <span class="detail-meta-label">🕐 Waktu</span>
+          <span id="detailTime" class="detail-meta-value"></span>
+        </div>
+        <div class="detail-meta-item">
+          <span class="detail-meta-label">👤 Customer</span>
+          <span id="detailCustomer" class="detail-meta-value"></span>
+        </div>
+        <div class="detail-meta-item">
+          <span class="detail-meta-label">🧾 Total Item</span>
+          <span id="detailTotalItems" class="detail-meta-value"></span>
+        </div>
+        <div class="detail-meta-item">
+          <span class="detail-meta-label">👨‍💼 Kasir</span>
+          <span id="detailKasir" class="detail-meta-value"></span>
+        </div>
+        <div class="detail-meta-item">
+          <span class="detail-meta-label">⏰ Shift</span>
+          <span id="detailShift" class="detail-meta-value"></span>
+        </div>
+      </div>
+
+      <table class="detail-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Nama Barang</th>
+            <th>Harga Satuan</th>
+            <th>Qty</th>
+            <th>Subtotal</th>
+          </tr>
+        </thead>
+        <tbody id="detailTableBody"></tbody>
+      </table>
+
+      <div class="detail-summary">
+        <div class="detail-sum-row">
+          <span>Subtotal</span>
+          <span id="detailSubtotal"></span>
+        </div>
+        <div class="detail-sum-row" id="detailDiscountRow">
+          <span id="detailDiscountLabel">Diskon</span>
+          <span id="detailDiscountVal"></span>
+        </div>
+        <div class="detail-sum-row detail-sum-total">
+          <span>TOTAL BAYAR</span>
+          <span id="detailTotal"></span>
+        </div>
+        <div class="detail-sum-row">
+          <span>Uang Diterima</span>
+          <span id="detailCash"></span>
+        </div>
+        <div class="detail-sum-row detail-sum-change">
+          <span>Kembalian</span>
+          <span id="detailChange"></span>
+        </div>
+      </div>
+
+      <div class="detail-actions">
+        <button class="btn btn-primary" onclick="document.getElementById('detailModal').classList.remove('active')">Tutup</button>
+        <button class="btn btn-export" onclick="printDetailReceipt()">🖨️ Cetak Struk</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL STRUK ===== -->
+  <div id="receiptModal" class="modal-overlay" onclick="closeModal(event)">
+    <div class="modal-box">
+      <div class="receipt">
+        <div class="receipt-header">
+          <h2>KasirKu</h2>
+          <p id="receiptDate"></p>
+          <p id="receiptCustomer"></p>
+          <p id="receiptKasir" style="font-size:11px;color:var(--muted)"></p>
+        </div>
+        <hr class="receipt-divider" />
+        <div id="receiptItems"></div>
+        <hr class="receipt-divider" />
+        <div class="receipt-totals">
+          <div class="receipt-row"><span>Subtotal</span><span id="receiptSubtotal"></span></div>
+          <div class="receipt-row" id="receiptDiscountRow"><span>Diskon</span><span id="receiptDiscount"></span></div>
+          <div class="receipt-row receipt-total"><span>TOTAL</span><span id="receiptTotal"></span></div>
+          <div class="receipt-row"><span>Bayar</span><span id="receiptCash"></span></div>
+          <div class="receipt-row receipt-change"><span>Kembalian</span><span id="receiptChange"></span></div>
+        </div>
+        <div class="receipt-footer">Terima kasih telah berbelanja! 🙏</div>
+      </div>
+      <button class="btn btn-primary" onclick="document.getElementById('receiptModal').style.display='none'">Tutup</button>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast"></div>
+
+  <!-- ===== BOTTOM NAV (Mobile Only) ===== -->
+  <nav class="bottom-nav">
+    <button class="bnav-btn active" onclick="switchTab('barang')" id="tab-barang">
+      <span class="bnav-icon">📦</span>
+      <span class="bnav-label">Barang</span>
+    </button>
+    <button class="bnav-btn" onclick="switchTab('transaksi')" id="tab-transaksi">
+      <span class="bnav-icon">🛒</span>
+      <span class="bnav-label">Transaksi</span>
+      <span class="cart-badge" id="cartBadge" style="display:none">0</span>
+    </button>
+    <button class="bnav-btn" onclick="switchTab('riwayat')" id="tab-riwayat">
+      <span class="bnav-icon">📋</span>
+      <span class="bnav-label">Riwayat</span>
+    </button>
+  </nav>
+
+  <script src="app.js"></script>
+</body>
+</html>
