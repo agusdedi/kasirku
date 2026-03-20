@@ -25,12 +25,12 @@ let unsubTx      = null;
 // ── INIT ──────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   setTodayDate();
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStr();
   document.getElementById('filterDate').value = today;
 
   // Set default owner filter date
   const ownerDateEl = document.getElementById('ownerFilterDate');
-  if (ownerDateEl) ownerDateEl.value = today;
+  if (ownerDateEl) ownerDateEl.value = localDateStr();
 
   // Pastikan env.js sudah ter-load
   if (!window.__env__ || window.__env__.FIREBASE_API_KEY.startsWith('GANTI')) {
@@ -212,6 +212,15 @@ function updateKasirBar() {
 
 // ── UTILS ─────────────────────────────────────
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
+
+// Konversi Date ke string YYYY-MM-DD berdasarkan LOCAL timezone
+// (bukan UTC seperti toISOString()) agar filter tanggal tidak geser
+function localDateStr(date = new Date()) {
+  const y  = date.getFullYear();
+  const m  = String(date.getMonth() + 1).padStart(2, '0');
+  const d  = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`; // contoh: 2026-03-21
+}
 
 // Generate kode transaksi: TRX-YYMMDD-XX-0001
 // Counter disimpan di Firestore doc: counters/daily/{YYMMDD}
@@ -442,8 +451,10 @@ window.processTransaction = async function() {
   const cash   = parseFloat(document.getElementById('cashInput').value)||0;
   if (cash < total) return showToast('Uang tidak cukup!', 'error');
 
+  const now = new Date();
   const txData = {
-    date:      new Date().toISOString(),
+    date:      now.toISOString(),          // tetap simpan full ISO untuk display waktu
+    localDate: localDateStr(now),          // tambah field local date untuk filter
     customer:  document.getElementById('customerName').value.trim() || 'Umum',
     kasir:     kasirAktif?.name  || 'Tidak diketahui',
     shift:     kasirAktif?.shift || '—',
@@ -550,10 +561,17 @@ window.closeDetailModal = function(e) {
 window.printDetailReceipt = function() { window.print(); }
 
 // ── RIWAYAT ───────────────────────────────────
+// Helper: ambil local date dari transaksi (support data lama & baru)
+function getTxLocalDate(tx) {
+  return tx.localDate || localDateStr(new Date(tx.date));
+}
+
 window.renderHistory = function renderHistory() {
   const filterDate = document.getElementById('filterDate').value;
   const list = document.getElementById('historyList');
-  let filtered = filterDate ? transactions.filter(tx => tx.date.startsWith(filterDate)) : transactions;
+  let filtered = filterDate
+    ? transactions.filter(tx => getTxLocalDate(tx) === filterDate)
+    : transactions;
   if (!filtered.length) {
     list.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:24px;">Belum ada transaksi</p>';
     return;
@@ -579,8 +597,8 @@ window.renderHistory = function renderHistory() {
 }
 
 function updateStats() {
-  const today = new Date().toISOString().split('T')[0];
-  const todayTx = transactions.filter(tx => tx.date.startsWith(today));
+  const today   = localDateStr();
+  const todayTx = transactions.filter(tx => getTxLocalDate(tx) === today);
   document.getElementById('statCount').textContent   = todayTx.length;
   document.getElementById('statRevenue').textContent = formatRp(todayTx.reduce((s,tx) => s+tx.total, 0));
 }
@@ -589,8 +607,10 @@ function updateStats() {
 window.switchOwnerDate = function() { renderOwnerDashboard(); }
 
 function renderOwnerDashboard() {
-  const filterDate = document.getElementById('ownerFilterDate')?.value || new Date().toISOString().split('T')[0];
-  const filtered = filterDate ? transactions.filter(tx => tx.date.startsWith(filterDate)) : transactions;
+  const filterDate = document.getElementById('ownerFilterDate')?.value || localDateStr();
+  const filtered = filterDate
+    ? transactions.filter(tx => getTxLocalDate(tx) === filterDate)
+    : transactions;
 
   const totalOmset    = filtered.reduce((s,tx) => s+tx.total, 0);
   const totalTx       = filtered.length;
@@ -642,7 +662,9 @@ window.exportExcel = function(fromOwner = false) {
   const filterDate = fromOwner
     ? document.getElementById('ownerFilterDate').value
     : document.getElementById('filterDate').value;
-  let filtered = filterDate ? transactions.filter(tx => tx.date.startsWith(filterDate)) : transactions;
+  let filtered = filterDate
+    ? transactions.filter(tx => getTxLocalDate(tx) === filterDate)
+    : transactions;
   if (!filtered.length) return showToast('Tidak ada transaksi untuk diekspor!', 'error');
 
   const wb = XLSX.utils.book_new();
@@ -666,7 +688,7 @@ window.exportExcel = function(fromOwner = false) {
 
   const byDate = {};
   filtered.forEach(tx => {
-    const d = tx.date.split('T')[0];
+    const d = getTxLocalDate(tx);
     if (!byDate[d]) byDate[d] = { count:0, revenue:0 };
     byDate[d].count++; byDate[d].revenue += tx.total;
   });
