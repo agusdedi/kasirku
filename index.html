@@ -111,29 +111,34 @@
       <h1>KasirKu</h1>
     </div>
 
-    <!-- Form Tambah Barang -->
-    <section class="panel">
-      <h2 class="panel-title">Tambah Barang</h2>
-      <div class="form-group">
-        <label>Nama Barang</label>
-        <input type="text" id="itemName" placeholder="Contoh: Kopi Hitam" />
-      </div>
-      <div class="form-row">
+    <!-- Form Tambah Barang (Collapsible) -->
+    <section class="panel panel-form-toggle" id="formPanel">
+      <button class="form-toggle-btn" onclick="toggleFormBarang()" id="formToggleBtn">
+        <span id="formToggleIcon">＋</span>
+        <span id="formToggleText">Tambah Barang Baru</span>
+      </button>
+      <div id="formBarang" class="form-body" style="display:none">
         <div class="form-group">
-          <label>Harga (Rp)</label>
-          <input type="number" id="itemPrice" placeholder="15000" min="0" />
+          <label>Nama Barang</label>
+          <input type="text" id="itemName" placeholder="Contoh: Kopi Hitam" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Harga (Rp)</label>
+            <input type="number" id="itemPrice" placeholder="15000" min="0" />
+          </div>
+          <div class="form-group">
+            <label>Stok</label>
+            <input type="number" id="itemStock" placeholder="50" min="0" />
+          </div>
         </div>
         <div class="form-group">
-          <label>Stok</label>
-          <input type="number" id="itemStock" placeholder="50" min="0" />
+          <label>Kategori</label>
+          <input type="text" id="itemCategory" placeholder="Minuman, Makanan, dll" />
         </div>
+        <button class="btn btn-primary" onclick="addItem()">+ Tambah Barang</button>
+        <button class="btn btn-cancel-edit" id="btnCancelEdit" onclick="cancelEdit()" style="display:none">✕ Batal Edit</button>
       </div>
-      <div class="form-group">
-        <label>Kategori</label>
-        <input type="text" id="itemCategory" placeholder="Minuman, Makanan, dll" />
-      </div>
-      <button class="btn btn-primary" onclick="addItem()">+ Tambah Barang</button>
-      <button class="btn btn-cancel-edit" id="btnCancelEdit" onclick="cancelEdit()" style="display:none">✕ Batal Edit</button>
     </section>
 
     <!-- Daftar Barang -->
@@ -187,41 +192,42 @@
 
     <!-- Panel Pembayaran -->
     <div class="payment-panel">
-      <div class="totals">
-        <div class="total-row">
-          <span>Subtotal</span>
-          <span id="subtotalDisplay">Rp 0</span>
+      <!-- Baris 1: Total + Diskon + Kembalian -->
+      <div class="payment-summary">
+        <div class="payment-summary-left">
+          <div class="payment-subtotal-row">
+            <span class="pay-label">Subtotal</span>
+            <span id="subtotalDisplay" class="pay-val">Rp 0</span>
+          </div>
+          <div class="payment-subtotal-row">
+            <span class="pay-label">Diskon</span>
+            <div style="display:flex;align-items:center;gap:4px">
+              <input type="number" id="discountInput" value="0" min="0" max="100" oninput="recalculate()" class="discount-input" />
+              <span class="pay-label">%</span>
+            </div>
+          </div>
+          <div class="pay-total-row">
+            <span class="pay-total-label">TOTAL</span>
+            <span id="totalDisplay" class="pay-total-val">Rp 0</span>
+          </div>
         </div>
-        <div class="total-row discount-row">
-          <span>Diskon (%)</span>
-          <input type="number" id="discountInput" value="0" min="0" max="100" oninput="recalculate()" class="discount-input" />
-        </div>
-        <div class="total-row total-final">
-          <span>TOTAL</span>
-          <span id="totalDisplay">Rp 0</span>
-        </div>
-      </div>
-
-      <div class="payment-input">
-        <div class="form-group">
-          <label>Uang Diterima (Rp)</label>
-          <input type="number" id="cashInput" placeholder="0" oninput="calcChange()" class="cash-input" />
-        </div>
-        <div class="change-display">
-          <span>Kembalian</span>
+        <div class="payment-summary-right">
+          <span class="pay-label">Kembalian</span>
           <span id="changeDisplay" class="change-amount">Rp 0</span>
         </div>
       </div>
 
-      <!-- Quick Cash Buttons -->
-      <div class="quick-cash">
-        <span class="quick-label">Nominal Cepat:</span>
-        <button onclick="setQuickCash(5000)">5K</button>
-        <button onclick="setQuickCash(10000)">10K</button>
-        <button onclick="setQuickCash(20000)">20K</button>
-        <button onclick="setQuickCash(50000)">50K</button>
-        <button onclick="setQuickCash(100000)">100K</button>
-        <button onclick="setQuickCash(0)" class="exact">Pas</button>
+      <!-- Baris 2: Input uang + Quick Cash -->
+      <div class="payment-cash-row">
+        <input type="number" id="cashInput" placeholder="Uang diterima..." oninput="calcChange()" class="cash-input" />
+        <div class="quick-cash">
+          <button onclick="setQuickCash(5000)">5K</button>
+          <button onclick="setQuickCash(10000)">10K</button>
+          <button onclick="setQuickCash(20000)">20K</button>
+          <button onclick="setQuickCash(50000)">50K</button>
+          <button onclick="setQuickCash(100000)">100K</button>
+          <button onclick="setQuickCash(0)" class="exact">Pas</button>
+        </div>
       </div>
 
       <button class="btn btn-success btn-lg" onclick="processTransaction()">✓ Bayar & Simpan Transaksi</button>

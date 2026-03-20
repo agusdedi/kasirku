@@ -1356,3 +1356,136 @@ input::placeholder { color: var(--muted); }
   .owner-stat-value { font-size: 15px; }
   .owner-tables { grid-template-columns: 1fr; gap: 14px; }
 }
+
+/* =============================================
+   COLLAPSIBLE FORM TAMBAH BARANG
+   ============================================= */
+.panel-form-toggle {
+  padding: 0 !important;
+  overflow: hidden;
+}
+.form-toggle-btn {
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.15s;
+  text-align: left;
+}
+.form-toggle-btn:hover { background: var(--border); }
+#formToggleIcon {
+  width: 22px;
+  height: 22px;
+  background: var(--accent);
+  color: #111;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+  line-height: 1;
+  padding-top: 1px;
+}
+#formToggleIcon.open { transform: rotate(45deg); }
+.form-body {
+  padding: 0 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* =============================================
+   PAYMENT PANEL COMPACT
+   ============================================= */
+.payment-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.payment-summary-left { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.payment-summary-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.payment-subtotal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.pay-label { font-size: 12px; color: var(--muted); }
+.pay-val   { font-size: 12px; color: var(--text); font-family: var(--font-mono); }
+.pay-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 2px;
+}
+.pay-total-label {
+  font-family: var(--font-head);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+}
+.pay-total-val {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.payment-cash-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Quick cash: wrap rapi di semua ukuran layar */
+.quick-cash {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.quick-cash button {
+  flex: 1;
+  min-width: 36px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 4px;
+  transition: background 0.15s, border-color 0.15s;
+  text-align: center;
+}
+.quick-cash button:hover { border-color: var(--accent); color: var(--accent); }
+.quick-cash button.exact { color: var(--green); border-color: var(--green); }
+
+/* Mobile: cash input full width */
+@media (max-width: 768px) {
+  .cash-input { width: 100% !important; font-size: 15px !important; }
+  .payment-panel { gap: 10px; }
+  .pay-total-val { font-size: 20px; }
+  .change-amount { font-size: 18px !important; }
+}

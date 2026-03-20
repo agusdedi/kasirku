@@ -290,6 +290,25 @@ window.deleteItem = async function(id) {
   } catch(e) { showToast('Gagal hapus: ' + e.message, 'error'); }
 }
 
+// Toggle form tambah barang (collapsible)
+window.toggleFormBarang = function(forceOpen = false) {
+  const form    = document.getElementById('formBarang');
+  const icon    = document.getElementById('formToggleIcon');
+  const text    = document.getElementById('formToggleText');
+  const isOpen  = form.style.display !== 'none';
+
+  if (forceOpen || !isOpen) {
+    form.style.display = 'flex';
+    icon.classList.add('open');
+    text.textContent = 'Tutup Form';
+    document.getElementById('itemName').focus();
+  } else {
+    form.style.display = 'none';
+    icon.classList.remove('open');
+    text.textContent = 'Tambah Barang Baru';
+  }
+}
+
 window.editItem = function(id) {
   const item = items.find(i => i.id === id);
   if (!item) return;
@@ -302,6 +321,8 @@ window.editItem = function(id) {
   btn.setAttribute('onclick', `saveEditItem('${id}')`);
   btn.style.background = 'var(--accent2)';
   document.getElementById('btnCancelEdit').style.display = 'block';
+  // Otomatis buka form saat edit
+  toggleFormBarang(true);
   document.querySelector('.sidebar').scrollTo({ top:0, behavior:'smooth' });
   showToast(`Edit mode: "${item.name}"`);
 }
@@ -328,6 +349,13 @@ window.cancelEdit = function() {
   btn.setAttribute('onclick', 'addItem()');
   btn.style.background = '';
   document.getElementById('btnCancelEdit').style.display = 'none';
+  // Tutup form setelah cancel/save
+  const form = document.getElementById('formBarang');
+  const icon = document.getElementById('formToggleIcon');
+  const text = document.getElementById('formToggleText');
+  if (form) { form.style.display = 'none'; }
+  if (icon) { icon.classList.remove('open'); }
+  if (text) { text.textContent = 'Tambah Barang Baru'; }
 }
 
 window.renderItems = function renderItems() {
