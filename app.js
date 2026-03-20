@@ -284,7 +284,7 @@ window.cancelEdit = function() {
   document.getElementById('btnCancelEdit').style.display = 'none';
 }
 
-function renderItems() {
+window.renderItems = function renderItems() {
   const q    = document.getElementById('searchItem').value.toLowerCase();
   const list = document.getElementById('itemList');
   if (items.length === 0) {
@@ -506,7 +506,7 @@ window.closeDetailModal = function(e) {
 window.printDetailReceipt = function() { window.print(); }
 
 // ── RIWAYAT ───────────────────────────────────
-function renderHistory() {
+window.renderHistory = function renderHistory() {
   const filterDate = document.getElementById('filterDate').value;
   const list = document.getElementById('historyList');
   let filtered = filterDate ? transactions.filter(tx => tx.date.startsWith(filterDate)) : transactions;
