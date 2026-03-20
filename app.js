@@ -5,7 +5,8 @@
 import { db, auth } from './firebase-config.js';
 import {
   collection, doc, addDoc, deleteDoc, updateDoc,
-  onSnapshot, query, orderBy, serverTimestamp
+  onSnapshot, query, orderBy, serverTimestamp,
+  runTransaction, getDoc
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged
@@ -211,6 +212,42 @@ function updateKasirBar() {
 
 // ── UTILS ─────────────────────────────────────
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
+
+// Generate kode transaksi: TRX-YYMMDD-XX-0001
+// Counter disimpan di Firestore doc: counters/daily/{YYMMDD}
+async function generateTrxId(kasirName) {
+  const now    = new Date();
+  const yy     = String(now.getFullYear()).slice(2);
+  const mm     = String(now.getMonth() + 1).padStart(2, '0');
+  const dd     = String(now.getDate()).padStart(2, '0');
+  const dateStr = yy + mm + dd; // contoh: 260321
+
+  // Inisial kasir: ambil 2 huruf pertama tiap kata, max 2 kata, uppercase
+  // contoh: "Agus Dedi" → "AD", "Budi" → "BU"
+  const initials = (kasirName || 'XX')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(w => w.charAt(0).toUpperCase())
+    .join('');
+
+  // Atomic increment counter harian di Firestore
+  const counterRef = doc(db, 'counters', dateStr);
+  let seq = 1;
+  try {
+    await runTransaction(db, async (t) => {
+      const snap = await t.get(counterRef);
+      seq = snap.exists() ? (snap.data().count + 1) : 1;
+      t.set(counterRef, { count: seq });
+    });
+  } catch (e) {
+    // Fallback ke timestamp jika transaksi gagal
+    seq = Date.now() % 10000;
+  }
+
+  const seqStr = String(seq).padStart(4, '0'); // 0001 – 9999
+  return `TRX-${dateStr}-${initials}-${seqStr}`;
+}
 function formatRp(n) { return 'Rp ' + Math.round(n).toLocaleString('id-ID'); }
 function showToast(msg, type = 'success') {
   const t = document.getElementById('toast');
@@ -423,15 +460,22 @@ window.processTransaction = async function() {
   btn.disabled = true;
 
   try {
+    // Generate kode transaksi custom
+    const trxId = await generateTrxId(kasirAktif?.name);
+
     const stockUpdates = cart.map(c => {
       const item = items.find(i => i.id === c.itemId);
       if (item) return updateDoc(doc(db,'items',c.itemId), { stock: item.stock - c.qty });
     }).filter(Boolean);
 
-    const txRef = await addDoc(collection(db,'transactions'), txData);
+    // Simpan dengan custom ID sebagai field + gunakan sebagai doc ID
+    const txRef = doc(db, 'transactions', trxId);
+    await runTransaction(db, async (t) => {
+      t.set(txRef, { ...txData, trxId });
+    });
     await Promise.all(stockUpdates);
 
-    showReceipt({ id: txRef.id, ...txData });
+    showReceipt({ id: trxId, ...txData });
     cart = [];
     ['cashInput','customerName'].forEach(id => document.getElementById(id).value='');
     document.getElementById('discountInput').value = '0';
@@ -521,7 +565,7 @@ window.renderHistory = function renderHistory() {
     return `
       <div class="history-card" onclick="showDetailModal('${tx.id}')">
         <div class="history-card-top">
-          <span class="history-id">${tx.id.slice(0,12)}...</span>
+          <span class="history-id">${tx.id}</span>
           <span class="history-time">${time}</span>
         </div>
         <div class="history-customer">${tx.customer}</div>
