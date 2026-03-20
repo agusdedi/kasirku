@@ -2,7 +2,7 @@
    SISTEM KASIR — app.js (Firebase Edition)
    ============================================= */
 
-import { db, auth } from './env.js';
+import { db, auth } from './firebase-config.js';
 import {
   collection, doc, addDoc, deleteDoc, updateDoc,
   onSnapshot, query, orderBy, serverTimestamp
@@ -24,7 +24,20 @@ let unsubTx      = null;
 // ── INIT ──────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   setTodayDate();
-  document.getElementById('filterDate').value = new Date().toISOString().split('T')[0];
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('filterDate').value = today;
+
+  // Set default owner filter date
+  const ownerDateEl = document.getElementById('ownerFilterDate');
+  if (ownerDateEl) ownerDateEl.value = today;
+
+  // Pastikan env.js sudah ter-load
+  if (!window.__env__ || window.__env__.FIREBASE_API_KEY.startsWith('GANTI')) {
+    document.getElementById('authModal').classList.remove('active');
+    document.getElementById('kasirModal').classList.remove('active');
+    document.getElementById('envError').style.display = 'flex';
+    return;
+  }
 
   onAuthStateChanged(auth, (user) => {
     if (user) {

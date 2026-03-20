@@ -8,8 +8,33 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- env.js HARUS dimuat di head, sebelum module scripts -->
+  <script src="env.js"></script>
 </head>
 <body>
+
+  <!-- ===== ERROR: ENV TIDAK TER-LOAD ===== -->
+  <div id="envError" class="modal-overlay" style="display:none">
+    <div class="modal-box kasir-modal-box" style="text-align:center;gap:16px">
+      <div style="font-size:40px">⚠️</div>
+      <h2 style="font-family:var(--font-head);color:var(--red)">Konfigurasi Belum Lengkap</h2>
+      <p style="color:var(--muted);font-size:13px;line-height:1.7">
+        File <code style="background:var(--surface2);padding:2px 6px;border-radius:4px">env.js</code> belum ter-generate.<br/>
+        Pastikan <strong>Environment Variables</strong> sudah diset di Vercel dan sudah di-<strong>Redeploy</strong>.
+      </p>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:left;font-size:12px;font-family:var(--font-mono);color:var(--muted);line-height:2">
+        FIREBASE_API_KEY<br/>
+        FIREBASE_AUTH_DOMAIN<br/>
+        FIREBASE_PROJECT_ID<br/>
+        FIREBASE_STORAGE_BUCKET<br/>
+        FIREBASE_MESSAGING_SENDER_ID<br/>
+        FIREBASE_APP_ID
+      </div>
+      <a href="https://vercel.com/dashboard" target="_blank" class="btn btn-primary" style="text-decoration:none;text-align:center">
+        Buka Vercel Dashboard →
+      </a>
+    </div>
+  </div>
 
   <!-- ===== MODAL LOGIN AKUN ===== -->
   <div id="authModal" class="modal-overlay active">
@@ -35,7 +60,7 @@
   </div>
 
   <!-- ===== MODAL LOGIN KASIR ===== -->
-  <div id="kasirModal" class="modal-overlay active" onclick="">
+  <div id="kasirModal" class="modal-overlay" onclick="">
     <div class="modal-box kasir-modal-box">
       <div class="kasir-modal-header">
         <span class="brand-icon" style="font-size:32px">🛒</span>
@@ -438,7 +463,6 @@
   </nav>
 
   <!-- Environment variables (di-generate Vercel, tidak ada di GitHub) -->
-  <script src="env.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>
