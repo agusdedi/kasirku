@@ -76,7 +76,22 @@ window.loginAuth = async function() {
   try {
     await signInWithEmailAndPassword(auth, email, password);
   } catch (e) {
-    errEl.textContent = 'Email atau password salah. Coba lagi.';
+    // Tampilkan kode error spesifik untuk debugging
+    const errorMap = {
+      'auth/invalid-email':        '❌ Format email tidak valid.',
+      'auth/user-not-found':       '❌ Email tidak terdaftar.',
+      'auth/wrong-password':       '❌ Password salah.',
+      'auth/invalid-credential':   '❌ Email atau password salah.',
+      'auth/too-many-requests':    '❌ Terlalu banyak percobaan. Tunggu beberapa menit.',
+      'auth/user-disabled':        '❌ Akun ini dinonaktifkan.',
+      'auth/network-request-failed': '❌ Tidak ada koneksi internet.',
+      'auth/api-key-not-valid':    '❌ API Key Firebase tidak valid. Cek env vars di Vercel.',
+      'auth/configuration-not-found': '❌ Firebase Auth belum diaktifkan atau Auth Domain salah.',
+    };
+    const msg = errorMap[e.code] || `❌ Error: ${e.code} — ${e.message}`;
+    errEl.textContent = msg;
+    errEl.style.color = 'var(--red)';
+    console.error('Firebase Auth Error:', e.code, e.message);
     btn.textContent = 'Masuk →';
     btn.disabled = false;
   }
@@ -92,26 +107,39 @@ window.logoutAuth = async function() {
 
 function onLoginSuccess() {
   document.getElementById('authModal').classList.remove('active');
+
   if (isOwner) {
+    // Owner: tidak perlu input nama kasir, langsung masuk
     document.getElementById('ownerTabBtn').style.display = 'flex';
     document.getElementById('authUserDisplay').textContent = '👑 ' + currentUser.email;
+    document.getElementById('kasirModal').classList.remove('active');
+
+    // Set kasirAktif otomatis dari email owner
+    kasirAktif = {
+      name:      'Owner',
+      shift:     '—',
+      loginTime: new Date().toISOString(),
+    };
+    updateKasirBar();
+
   } else {
+    // Kasir: wajib isi nama & shift
     document.getElementById('ownerTabBtn').style.display = 'none';
     document.getElementById('authUserDisplay').textContent = '🔑 ' + currentUser.email;
+
+    const k = localStorage.getItem('kasir_aktif');
+    if (k) {
+      kasirAktif = JSON.parse(k);
+      document.getElementById('kasirModal').classList.remove('active');
+      updateKasirBar();
+    } else {
+      document.getElementById('kasirModal').classList.add('active');
+    }
   }
+
   document.getElementById('authUserBar').style.display = 'flex';
-
-  const k = localStorage.getItem('kasir_aktif');
-  if (k) {
-    kasirAktif = JSON.parse(k);
-    document.getElementById('kasirModal').classList.remove('active');
-    updateKasirBar();
-  } else {
-    document.getElementById('kasirModal').classList.add('active');
-  }
-
   startListeners();
-  if (window.innerWidth <= 768) switchTab('barang');
+  if (window.innerWidth <= 768) switchTab(isOwner ? 'owner' : 'barang');
 }
 
 function stopListeners() {
@@ -160,6 +188,7 @@ window.loginKasir = function() {
 }
 
 window.gantiKasir = function() {
+  if (isOwner) return; // owner tidak perlu ganti kasir
   if (!confirm(`Ganti kasir dari "${kasirAktif?.name}"?`)) return;
   kasirAktif = null;
   localStorage.removeItem('kasir_aktif');
@@ -174,6 +203,10 @@ function updateKasirBar() {
   document.getElementById('kasirAvatar').textContent       = kasirAktif.name.charAt(0).toUpperCase();
   document.getElementById('kasirNameDisplay').textContent  = kasirAktif.name;
   document.getElementById('kasirShiftDisplay').textContent = kasirAktif.shift;
+
+  // Sembunyikan tombol Ganti untuk owner
+  const gantiBtn = document.querySelector('.btn-ganti-kasir[onclick="gantiKasir()"]');
+  if (gantiBtn) gantiBtn.style.display = isOwner ? 'none' : 'block';
 }
 
 // ── UTILS ─────────────────────────────────────
