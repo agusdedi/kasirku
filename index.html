@@ -155,6 +155,8 @@
     </button>
   </aside>
   <main class="main" data-tab="transaksi">
+
+    <!-- Header Desktop (normal) -->
     <div class="main-header">
       <div>
         <h2>Transaksi Baru</h2>
@@ -165,6 +167,20 @@
         <button class="btn btn-export toggle-history-btn" onclick="toggleHistory()">📋 Riwayat</button>
         <button class="btn btn-danger" onclick="clearCart()">🗑 Bersihkan</button>
       </div>
+    </div>
+
+    <!-- Header Mobile (compact) — hanya tampil di ≤768px -->
+    <div class="main-header-mobile">
+      <div class="main-header-mobile-top">
+        <span class="mobile-trx-title">🛒 Transaksi Baru</span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span id="mobileTotalBadge" class="mobile-total-badge">Rp 0</span>
+          <button class="btn-icon-mobile btn-danger-mobile" onclick="clearCart()" title="Bersihkan">🗑</button>
+        </div>
+      </div>
+      <input type="text" id="customerNameMobile" placeholder="Nama Customer (opsional)"
+        oninput="document.getElementById('customerName').value=this.value"
+        class="customer-input-mobile" />
     </div>
 
     <!-- Keranjang Belanja -->
@@ -190,8 +206,8 @@
       </table>
     </div>
 
-    <!-- Panel Pembayaran -->
-    <div class="payment-panel">
+    <!-- Panel Pembayaran (desktop) -->
+    <div class="payment-panel" id="paymentPanel">
       <!-- Baris 1: Total + Diskon + Kembalian -->
       <div class="payment-summary">
         <div class="payment-summary-left">
@@ -232,6 +248,60 @@
 
       <button class="btn btn-success btn-lg" onclick="processTransaction()">✓ Bayar & Simpan Transaksi</button>
     </div>
+
+    <!-- MOBILE DRAWER: Payment panel slide-up -->
+    <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
+    <div class="payment-drawer" id="paymentDrawer">
+      <!-- Handle geser -->
+      <div class="drawer-handle" onclick="toggleDrawer()">
+        <div class="drawer-handle-bar"></div>
+        <div class="drawer-handle-info">
+          <span class="drawer-handle-label" id="drawerHandleLabel">Geser untuk bayar</span>
+          <span class="drawer-handle-total" id="drawerHandleTotal">Rp 0</span>
+        </div>
+      </div>
+      <!-- Isi drawer (sama persis dengan payment panel) -->
+      <div class="drawer-body">
+        <div class="payment-summary">
+          <div class="payment-summary-left">
+            <div class="payment-subtotal-row">
+              <span class="pay-label">Subtotal</span>
+              <span id="drawerSubtotal" class="pay-val">Rp 0</span>
+            </div>
+            <div class="payment-subtotal-row">
+              <span class="pay-label">Diskon</span>
+              <div style="display:flex;align-items:center;gap:4px">
+                <input type="number" id="drawerDiscountInput" value="0" min="0" max="100"
+                  oninput="syncDiscount(this.value)" class="discount-input" />
+                <span class="pay-label">%</span>
+              </div>
+            </div>
+            <div class="pay-total-row">
+              <span class="pay-total-label">TOTAL</span>
+              <span id="drawerTotal" class="pay-total-val">Rp 0</span>
+            </div>
+          </div>
+          <div class="payment-summary-right">
+            <span class="pay-label">Kembalian</span>
+            <span id="drawerChange" class="change-amount">Rp 0</span>
+          </div>
+        </div>
+        <div class="payment-cash-row">
+          <input type="number" id="drawerCashInput" placeholder="Uang diterima..."
+            oninput="syncCash(this.value)" class="cash-input" />
+          <div class="quick-cash">
+            <button onclick="setQuickCash(5000)">5K</button>
+            <button onclick="setQuickCash(10000)">10K</button>
+            <button onclick="setQuickCash(20000)">20K</button>
+            <button onclick="setQuickCash(50000)">50K</button>
+            <button onclick="setQuickCash(100000)">100K</button>
+            <button onclick="setQuickCash(0)" class="exact">Pas</button>
+          </div>
+        </div>
+        <button class="btn btn-success btn-lg" onclick="processTransaction()">✓ Bayar & Simpan Transaksi</button>
+      </div>
+    </div>
+
   </main>
 
   <!-- ===== KANAN: Riwayat Transaksi ===== -->

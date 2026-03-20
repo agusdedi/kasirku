@@ -454,35 +454,126 @@ function getTotal() {
   return getSubtotal() * (1 - (parseFloat(document.getElementById('discountInput').value)||0) / 100);
 }
 window.recalculate = function() {
-  document.getElementById('subtotalDisplay').textContent = formatRp(getSubtotal());
-  document.getElementById('totalDisplay').textContent    = formatRp(getTotal());
+  const sub   = formatRp(getSubtotal());
+  const total = formatRp(getTotal());
+  // Desktop
+  document.getElementById('subtotalDisplay').textContent = sub;
+  document.getElementById('totalDisplay').textContent    = total;
+  // Drawer mobile
+  const dSub = document.getElementById('drawerSubtotal');
+  const dTot = document.getElementById('drawerTotal');
+  if (dSub) dSub.textContent = sub;
+  if (dTot) dTot.textContent = total;
+  // Header mobile badge
+  const badge = document.getElementById('mobileTotalBadge');
+  if (badge) badge.textContent = total;
+  // Drawer handle total
+  const handleTotal = document.getElementById('drawerHandleTotal');
+  if (handleTotal) handleTotal.textContent = total;
   calcChange();
 }
+
 window.calcChange = function() {
-  const cash = parseFloat(document.getElementById('cashInput').value)||0;
+  const cash   = parseFloat(document.getElementById('cashInput').value) ||
+                 parseFloat(document.getElementById('drawerCashInput')?.value) || 0;
   const change = cash - getTotal();
+  const val    = formatRp(Math.abs(change));
+  const cls    = 'change-amount' + (change < 0 ? ' negative' : '');
+  // Desktop
   const el = document.getElementById('changeDisplay');
-  el.textContent = formatRp(Math.abs(change));
-  el.className = 'change-amount' + (change < 0 ? ' negative' : '');
+  if (el) { el.textContent = val; el.className = cls; }
+  // Drawer
+  const del = document.getElementById('drawerChange');
+  if (del) { del.textContent = val; del.className = cls; }
 }
+
 window.setQuickCash = function(amount) {
-  document.getElementById('cashInput').value = amount === 0
-    ? Math.ceil(getTotal())
-    : (parseFloat(document.getElementById('cashInput').value)||0) + amount;
+  const isMobile = window.innerWidth <= 768;
+  const inputId  = isMobile ? 'drawerCashInput' : 'cashInput';
+  const cur      = parseFloat(document.getElementById(inputId)?.value) || 0;
+  const val      = amount === 0 ? Math.ceil(getTotal()) : cur + amount;
+  // Set kedua input agar selalu sync
+  const ci = document.getElementById('cashInput');
+  const di = document.getElementById('drawerCashInput');
+  if (ci) ci.value = val;
+  if (di) di.value = val;
   calcChange();
 }
+
+// Sync diskon dari drawer ke desktop
+window.syncDiscount = function(val) {
+  const di = document.getElementById('discountInput');
+  if (di) di.value = val;
+  recalculate();
+}
+
+// Sync cash dari drawer ke desktop
+window.syncCash = function(val) {
+  const ci = document.getElementById('cashInput');
+  if (ci) ci.value = val;
+  calcChange();
+}
+
+// ── DRAWER FUNCTIONS ──────────────────────────
+window.toggleDrawer = function() {
+  const drawer  = document.getElementById('paymentDrawer');
+  const overlay = document.getElementById('drawerOverlay');
+  const label   = document.getElementById('drawerHandleLabel');
+  if (!drawer) return;
+  const isOpen = drawer.classList.contains('open');
+  if (isOpen) {
+    drawer.classList.remove('open');
+    overlay.classList.remove('active');
+    if (label) label.textContent = 'Geser untuk bayar';
+  } else {
+    drawer.classList.add('open');
+    overlay.classList.add('active');
+    if (label) label.textContent = 'Tutup';
+    // Sync nilai dari desktop ke drawer saat dibuka
+    const di = document.getElementById('drawerDiscountInput');
+    const dc = document.getElementById('drawerCashInput');
+    if (di) di.value = document.getElementById('discountInput')?.value || '0';
+    if (dc) dc.value = document.getElementById('cashInput')?.value || '';
+    setTimeout(() => document.getElementById('drawerCashInput')?.focus(), 300);
+  }
+}
+
+window.closeDrawer = function() {
+  const drawer  = document.getElementById('paymentDrawer');
+  const overlay = document.getElementById('drawerOverlay');
+  const label   = document.getElementById('drawerHandleLabel');
+  if (drawer) drawer.classList.remove('open');
+  if (overlay) overlay.classList.remove('active');
+  if (label) label.textContent = 'Geser untuk bayar';
+}
+
+// Sync customerName mobile → desktop
+document.addEventListener('DOMContentLoaded', () => {
+  const cm = document.getElementById('customerNameMobile');
+  const cd = document.getElementById('customerName');
+  if (cm && cd) {
+    cm.addEventListener('input', () => cd.value = cm.value);
+    cd.addEventListener('input', () => cm.value = cd.value);
+  }
+});
 
 // ── PROSES TRANSAKSI ──────────────────────────
 window.processTransaction = async function() {
   if (!cart.length) return showToast('Keranjang masih kosong!', 'error');
   const total  = getTotal();
-  const cash   = parseFloat(document.getElementById('cashInput').value)||0;
+  const isMobile = window.innerWidth <= 768;
+  // Ambil cash dari drawer jika mobile, dari desktop jika tidak
+  const cash = parseFloat(
+    isMobile
+      ? (document.getElementById('drawerCashInput')?.value || document.getElementById('cashInput')?.value)
+      : document.getElementById('cashInput')?.value
+  ) || 0;
   if (cash < total) return showToast('Uang tidak cukup!', 'error');
 
   const now = new Date();
   const txData = {
-    date:      now.toISOString(),          // tetap simpan full ISO untuk display waktu
-    localDate: localDateStr(now),          // tambah field local date untuk filter
+    date:      now.toISOString(),
+    localDate: localDateStr(now),
     customer:  document.getElementById('customerName').value.trim() || 'Umum',
     kasir:     kasirAktif?.name  || 'Tidak diketahui',
     shift:     kasirAktif?.shift || '—',
@@ -516,8 +607,15 @@ window.processTransaction = async function() {
 
     showReceipt({ id: trxId, ...txData });
     cart = [];
-    ['cashInput','customerName'].forEach(id => document.getElementById(id).value='');
-    document.getElementById('discountInput').value = '0';
+    ['cashInput','customerName','customerNameMobile'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    ['discountInput','drawerDiscountInput'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '0';
+    });
+    const dci = document.getElementById('drawerCashInput');
+    if (dci) dci.value = '';
+    closeDrawer();
     renderCart(); recalculate();
     showToast('Transaksi berhasil disimpan! ✓');
   } catch(e) {
