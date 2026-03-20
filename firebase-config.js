@@ -1,7 +1,7 @@
 // =============================================
 //   FIREBASE CONFIG — firebase-config.js
-//   Ganti nilai di bawah dengan config milik Anda
-//   dari Firebase Console > Project Settings > Web App
+//   Config dibaca dari window.__env__
+//   yang di-inject oleh env.js (Vercel)
 // =============================================
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -9,12 +9,12 @@ import { getFirestore }   from "https://www.gstatic.com/firebasejs/10.12.0/fireb
 import { getAuth }        from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
-  apiKey:            "AIzaSyDxQJmCa_1dh8DChbxp2I9dowacJByssng",
-  authDomain:        "kasirku-fd0e8.firebaseapp.com",
-  projectId:         "kasirku-fd0e8",
-  storageBucket:     "kasirku-fd0e8.firebasestorage.app",
-  messagingSenderId: "344113719745",
-  appId:             "1:344113719745:web:faafe99c15ffa041302740"
+  apiKey:            window.__env__.FIREBASE_API_KEY,
+  authDomain:        window.__env__.FIREBASE_AUTH_DOMAIN,
+  projectId:         window.__env__.FIREBASE_PROJECT_ID,
+  storageBucket:     window.__env__.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: window.__env__.FIREBASE_MESSAGING_SENDER_ID,
+  appId:             window.__env__.FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);

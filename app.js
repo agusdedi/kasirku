@@ -2,7 +2,7 @@
    SISTEM KASIR — app.js (Firebase Edition)
    ============================================= */
 
-import { db, auth } from './firebase-config.js';
+import { db, auth } from './env.js';
 import {
   collection, doc, addDoc, deleteDoc, updateDoc,
   onSnapshot, query, orderBy, serverTimestamp

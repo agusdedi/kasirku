@@ -34,12 +34,6 @@
     </div>
   </div>
 
-  <!-- ===== AUTH USER BAR ===== -->
-  <div id="authUserBar" class="auth-user-bar" style="display:none">
-    <span id="authUserDisplay"></span>
-    <button class="btn-ganti-kasir" onclick="logoutAuth()">Keluar</button>
-  </div>
-
   <!-- ===== MODAL LOGIN KASIR ===== -->
   <div id="kasirModal" class="modal-overlay active" onclick="">
     <div class="modal-box kasir-modal-box">
@@ -71,17 +65,14 @@
     </div>
   </div>
 
-  <!-- ===== KASIR INFO BAR ===== -->
-  <div class="kasir-bar" id="kasirBar">
-    <div class="kasir-bar-left">
-      <span class="kasir-avatar" id="kasirAvatar">?</span>
-      <div class="kasir-info">
-        <span class="kasir-name" id="kasirNameDisplay">—</span>
-        <span class="kasir-shift" id="kasirShiftDisplay">—</span>
-      </div>
-    </div>
-    <button class="btn-ganti-kasir" onclick="gantiKasir()" title="Ganti Kasir">⇄ Ganti</button>
+  <!-- ===== AUTH USER BAR ===== -->
+  <div id="authUserBar" class="auth-user-bar" style="display:none">
+    <span id="authUserDisplay"></span>
+    <button class="btn-ganti-kasir" onclick="logoutAuth()">Keluar</button>
   </div>
+
+  <!-- ===== APP COLUMNS ===== -->
+  <div class="app-columns">
 
   <!-- ===== SIDEBAR KIRI: Manajemen Barang ===== -->
   <aside class="sidebar" data-tab="barang">
@@ -408,6 +399,20 @@
     </div>
   </section>
 
+  </div><!-- end .app-columns -->
+
+  <!-- ===== KASIR INFO BAR ===== -->
+  <div class="kasir-bar" id="kasirBar">
+    <div class="kasir-bar-left">
+      <span class="kasir-avatar" id="kasirAvatar">?</span>
+      <div class="kasir-info">
+        <span class="kasir-name" id="kasirNameDisplay">—</span>
+        <span class="kasir-shift" id="kasirShiftDisplay">—</span>
+      </div>
+    </div>
+    <button class="btn-ganti-kasir" onclick="gantiKasir()" title="Ganti Kasir">⇄ Ganti</button>
+  </div>
+
   <!-- Toast Notification -->
   <div id="toast" class="toast"></div>
 
@@ -432,6 +437,8 @@
     </button>
   </nav>
 
+  <!-- Environment variables (di-generate Vercel, tidak ada di GitHub) -->
+  <script src="env.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

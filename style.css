@@ -30,12 +30,22 @@ html, body {
   font-size: 14px;
 }
 
-/* === LAYOUT: 3-COLUMN GRID === */
+/* === LAYOUT: FLEX COLUMN + 3-COLUMN CONTENT === */
 body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Wrapper untuk 3 kolom utama */
+.app-columns {
   display: grid;
   grid-template-columns: 280px 1fr 300px;
-  grid-template-rows: 100vh;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
+  width: 100%;
 }
 
 /* =============================================
@@ -49,6 +59,8 @@ body {
   gap: 16px;
   padding: 20px 16px;
   overflow-y: auto;
+  min-height: 0;
+  height: 100%;
 }
 
 .brand {
@@ -194,6 +206,8 @@ input::placeholder { color: var(--muted); }
   flex-direction: column;
   overflow: hidden;
   background: var(--bg);
+  height: 100%;
+  min-height: 0;
 }
 
 .main-header {
@@ -382,6 +396,8 @@ input::placeholder { color: var(--muted); }
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  height: 100%;
+  min-height: 0;
 }
 
 .history-header {
@@ -694,9 +710,8 @@ input::placeholder { color: var(--muted); }
    RESPONSIVE — TABLET (≤ 1024px)
    ============================================= */
 @media (max-width: 1024px) {
-  body {
+  .app-columns {
     grid-template-columns: 260px 1fr;
-    grid-template-rows: 100vh;
   }
 
   .history-panel {
@@ -734,22 +749,33 @@ input::placeholder { color: var(--muted); }
 
   /* Layout: satu kolom penuh, tab-based */
   body {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr;
     height: 100dvh;
     overflow: hidden;
-    padding-bottom: 64px; /* ruang untuk bottom nav */
+  }
+  .app-columns {
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* App columns jadi single cell di mobile */
+  .app-columns {
+    grid-template-columns: 1fr;
+    position: relative;
+    overflow: visible;
   }
 
   /* Semua panel jadi full-screen, toggle via JS */
   .sidebar,
   .main,
-  .history-panel {
+  .history-panel,
+  .owner-dashboard {
     position: fixed;
-    inset: 0;
-    bottom: 64px;
+    top: 36px;    /* auth-user-bar */
+    left: 0;
+    right: 0;
+    bottom: 100px; /* 64px bottom-nav + 36px kasir-bar */
     width: 100%;
-    height: calc(100dvh - 64px);
+    height: auto;
     display: none;
     overflow-y: auto;
     border: none;
@@ -1040,10 +1066,11 @@ input::placeholder { color: var(--muted); }
   .history-panel.panel-open {
     display: flex !important;
     position: fixed;
-    top: 0;
+    top: 36px;
     right: 0;
+    bottom: 40px;
     width: 300px;
-    height: 100dvh;
+    height: auto;
     z-index: 40;
     box-shadow: -4px 0 24px rgba(0,0,0,0.4);
   }
@@ -1122,10 +1149,6 @@ input::placeholder { color: var(--muted); }
    KASIR INFO BAR
    ============================================= */
 .kasir-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
   height: 40px;
   background: var(--surface);
   border-top: 1px solid var(--border);
@@ -1133,8 +1156,9 @@ input::placeholder { color: var(--muted); }
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  z-index: 30;
   font-size: 12px;
+  flex-shrink: 0;
+  width: 100%;
 }
 .kasir-bar-left {
   display: flex;
@@ -1190,39 +1214,16 @@ input::placeholder { color: var(--muted); }
   border-color: var(--accent);
 }
 
-/* Adjust layout untuk kasir bar di desktop/tablet */
-@media (min-width: 769px) {
-  body {
-    padding-bottom: 40px;
-  }
-  .sidebar,
-  .main,
-  .history-panel {
-    height: calc(100vh - 40px);
-  }
-}
+/* kasir-bar di desktop sudah di-handle flex column */
 
 /* Kasir bar di atas bottom nav saat mobile */
 @media (max-width: 768px) {
   .kasir-bar {
-    bottom: 64px;
     height: 36px;
     padding: 0 12px;
   }
   .kasir-shift {
     display: none;
-  }
-  body {
-    padding-bottom: calc(64px + 36px);
-  }
-  .sidebar,
-  .main,
-  .history-panel {
-    bottom: calc(64px + 36px);
-    height: calc(100dvh - 64px - 36px);
-  }
-  .bottom-nav {
-    bottom: 36px;
   }
 }
 
@@ -1237,8 +1238,6 @@ input::placeholder { color: var(--muted); }
    AUTH USER BAR
    ============================================= */
 .auth-user-bar {
-  position: fixed;
-  top: 0; left: 0; right: 0;
   height: 36px;
   background: var(--surface2);
   border-bottom: 1px solid var(--border);
@@ -1247,19 +1246,14 @@ input::placeholder { color: var(--muted); }
   justify-content: flex-end;
   padding: 0 16px;
   gap: 12px;
-  z-index: 35;
   font-size: 12px;
   color: var(--muted);
+  flex-shrink: 0;
+  width: 100%;
 }
 
 /* Push body content down when auth bar visible */
-body:has(.auth-user-bar[style*="flex"]) .sidebar,
-body:has(.auth-user-bar[style*="flex"]) .main,
-body:has(.auth-user-bar[style*="flex"]) .history-panel,
-body:has(.auth-user-bar[style*="flex"]) .owner-dashboard {
-  top: 36px;
-  height: calc(100vh - 36px - 40px);
-}
+/* layout handled by flexbox */
 
 /* =============================================
    OWNER DASHBOARD
@@ -1274,13 +1268,11 @@ body:has(.auth-user-bar[style*="flex"]) .owner-dashboard {
   grid-column: 1 / -1; /* span semua kolom di desktop */
 }
 
-/* Desktop: owner dashboard tampil di atas semua */
+/* Desktop: owner dashboard span semua kolom */
 @media (min-width: 769px) {
   .owner-dashboard.tab-active {
     display: flex;
-    position: fixed;
-    inset: 36px 0 40px 0;
-    z-index: 20;
+    grid-column: 1 / -1;
   }
 }
 
@@ -1358,10 +1350,6 @@ body:has(.auth-user-bar[style*="flex"]) .owner-dashboard {
   }
   .owner-dashboard.tab-active {
     display: flex;
-    position: fixed;
-    inset: 0;
-    bottom: calc(64px + 36px);
-    overflow-y: auto;
   }
   .owner-stats { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .owner-stat-card { padding: 12px; gap: 10px; }
