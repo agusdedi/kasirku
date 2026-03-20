@@ -574,6 +574,7 @@ window.renderHistory = function renderHistory() {
     : transactions;
   if (!filtered.length) {
     list.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:24px;">Belum ada transaksi</p>';
+    updateStats(); // tetap update stats meski kosong
     return;
   }
   list.innerHTML = filtered.map(tx => {
@@ -594,13 +595,33 @@ window.renderHistory = function renderHistory() {
         </div>
       </div>`;
   }).join('');
+  updateStats(); // sync stats dengan tanggal yang difilter
 }
 
 function updateStats() {
-  const today   = localDateStr();
-  const todayTx = transactions.filter(tx => getTxLocalDate(tx) === today);
-  document.getElementById('statCount').textContent   = todayTx.length;
-  document.getElementById('statRevenue').textContent = formatRp(todayTx.reduce((s,tx) => s+tx.total, 0));
+  const filterDate = document.getElementById('filterDate')?.value || localDateStr();
+  const filtered   = transactions.filter(tx => getTxLocalDate(tx) === filterDate);
+
+  document.getElementById('statCount').textContent   = filtered.length;
+  document.getElementById('statRevenue').textContent = formatRp(filtered.reduce((s,tx) => s+tx.total, 0));
+
+  // Update judul section sesuai tanggal yang dipilih
+  const titleEl = document.getElementById('historyTitle');
+  if (titleEl) {
+    const today    = localDateStr();
+    const yesterday = localDateStr(new Date(Date.now() - 86400000));
+    if (filterDate === today) {
+      titleEl.textContent = 'Riwayat Hari Ini';
+    } else if (filterDate === yesterday) {
+      titleEl.textContent = 'Riwayat Kemarin';
+    } else {
+      // Format tanggal yang dipilih: "21 Mar 2026"
+      const d = new Date(filterDate + 'T00:00:00');
+      titleEl.textContent = 'Riwayat ' + d.toLocaleDateString('id-ID', {
+        day: 'numeric', month: 'short', year: 'numeric'
+      });
+    }
+  }
 }
 
 // ── OWNER DASHBOARD ───────────────────────────
