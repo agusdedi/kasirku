@@ -331,24 +331,37 @@ label{font-size:11px;font-weight:600;color:var(--mut);text-transform:uppercase;l
 #receiptModal .modal-box{background:#fff;color:#222;border-color:#ddd}
 
 /* ── @media print — cetak struk selalu hitam-putih bersih ── */
-@media print {
-  /* Sembunyikan semua kecuali konten struk */
-  body > *{display:none!important}
-  #receiptModal{display:block!important;position:static!important;background:none!important;padding:0!important}
-  #receiptModal .modal-box{display:block!important;box-shadow:none!important;border:none!important;padding:0!important;max-height:none!important;overflow:visible!important;background:#fff!important;color:#000!important}
-  #receiptModal .btn{display:none!important}
+/* Gunakan #printArea yang diinject ke body saat print, bukan modal */
+#printArea{display:none}
 
-  /* Force semua elemen struk ke warna hitam-putih */
-  .receipt{font-family:'Courier New',monospace;font-size:12px;color:#000}
-  .receipt-header h2{color:#000!important;font-size:16px}
-  .receipt-header p,.receipt-kasir-info{color:#333!important}
-  .receipt-divider{border-top:1px dashed #000!important}
-  .receipt-item-name{color:#000!important}
-  .receipt-item-sub{color:#000!important;font-weight:600}
-  .receipt-row{color:#333!important}
-  .receipt-total{color:#000!important;font-weight:800;border-top:1px dashed #000!important}
-  .receipt-change{color:#000!important;font-weight:700}
-  .receipt-footer{color:#555!important}
+@media print {
+  /* Sembunyikan semua elemen halaman */
+  body > *{display:none!important}
+
+  /* Tampilkan hanya printArea */
+  #printArea{
+    display:block!important;
+    position:fixed!important;
+    inset:0!important;
+    background:#fff!important;
+    padding:24px 28px!important;
+    font-family:'Courier New',monospace!important;
+    font-size:12px!important;
+    color:#000!important;
+    z-index:99999!important;
+  }
+
+  /* Paksa semua child #printArea ke hitam-putih */
+  #printArea *{color:#000!important;background:transparent!important;border-color:#000!important}
+  #printArea .receipt-header h2{font-size:16px!important;font-weight:800!important;letter-spacing:1px}
+  #printArea .receipt-header p,
+  #printArea .receipt-kasir-info{font-size:10px!important;color:#333!important}
+  #printArea .receipt-divider{border:none!important;border-top:1px dashed #000!important;margin:8px 0!important}
+  #printArea .receipt-item{display:flex!important;justify-content:space-between!important;margin:2px 0!important}
+  #printArea .receipt-item-sub{font-weight:600!important}
+  #printArea .receipt-total{font-size:13px!important;font-weight:800!important;border-top:1px dashed #000!important;padding-top:5px!important}
+  #printArea .receipt-change{font-weight:700!important}
+  #printArea .receipt-footer{font-size:10px!important;text-align:center!important;color:#333!important;padding-top:10px!important}
 }
 
 /* ── SCANNER ── */

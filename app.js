@@ -721,7 +721,55 @@ window.showDetailModal = function(txId) {
 window.closeDetailModal = function(e) {
   if (e.target.id==='detailModal') document.getElementById('detailModal').classList.remove('active');
 }
-window.printDetailReceipt = function() { window.print(); }
+window.printDetailReceipt = function() {
+  // Ambil data dari detail modal yang sedang aktif
+  const txId    = document.getElementById('detailId').textContent;
+  const tx      = transactions.find(t => t.id === txId);
+  if (!tx) { window.print(); return; } // fallback
+
+  const date    = new Date(tx.date);
+  const dateStr = date.toLocaleString('id-ID');
+  const discountRow = tx.discount > 0
+    ? `<div class="receipt-row"><span>Diskon ${tx.discount}%</span><span>- ${formatRp(tx.subtotal * tx.discount / 100)}</span></div>`
+    : '';
+  const itemsHtml = tx.items.map(i =>
+    `<div class="receipt-item">
+      <span class="receipt-item-name">${i.name} x${i.qty}</span>
+      <span class="receipt-item-sub">${formatRp(i.price * i.qty)}</span>
+    </div>`
+  ).join('');
+
+  // Buat atau update #printArea di body
+  let printArea = document.getElementById('printArea');
+  if (!printArea) {
+    printArea = document.createElement('div');
+    printArea.id = 'printArea';
+    document.body.appendChild(printArea);
+  }
+
+  printArea.innerHTML = `
+    <div class="receipt">
+      <div class="receipt-header">
+        <h2>KasirKu</h2>
+        <p>${dateStr}</p>
+        <p>Pelanggan: ${tx.customer}</p>
+        <p class="receipt-kasir-info">Kasir: ${tx.kasir} | ${tx.shift}</p>
+      </div>
+      <hr class="receipt-divider" />
+      ${itemsHtml}
+      <hr class="receipt-divider" />
+      <div class="receipt-totals">
+        <div class="receipt-row"><span>Subtotal</span><span>${formatRp(tx.subtotal)}</span></div>
+        ${discountRow}
+        <div class="receipt-row receipt-total"><span>TOTAL</span><span>${formatRp(tx.total)}</span></div>
+        <div class="receipt-row"><span>Bayar</span><span>${formatRp(tx.cash)}</span></div>
+        <div class="receipt-row receipt-change"><span>Kembalian</span><span>${formatRp(tx.change)}</span></div>
+      </div>
+      <div class="receipt-footer">Terima kasih telah berbelanja! 🙏</div>
+    </div>`;
+
+  window.print();
+}
 
 // ── RIWAYAT ───────────────────────────────────
 // Helper: ambil local date dari transaksi (support data lama & baru)
