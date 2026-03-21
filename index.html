@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -100,6 +100,7 @@
 
   <!-- ===== AUTH USER BAR ===== -->
   <div id="authUserBar" class="auth-user-bar" style="display:none">
+    <button class="btn-theme-toggle" onclick="toggleTheme()" id="themeToggleBtn"><span class="theme-icon">🌙</span><span id="themeLabel">Dark</span></button>
     <span id="authUserDisplay"></span>
     <button class="btn-ganti-kasir" onclick="logoutAuth()">Keluar</button>
   </div>
@@ -110,7 +111,7 @@
   <!-- ===== SIDEBAR KIRI: Manajemen Barang ===== -->
   <aside class="sidebar" data-tab="barang">
     <div class="brand">
-      <span class="brand-icon">🛒</span>
+      <div class="brand-logo">🛒</div>
       <h1>KasirKu</h1>
     </div>
 
@@ -232,8 +233,19 @@
         <tbody id="cartBody">
           <tr id="emptyCart">
             <td colspan="5" class="empty-state">
-              <div>🛍️</div>
-              <p>Keranjang kosong.<br/>Klik barang di sebelah kiri untuk menambahkan.</p>
+              <div class="empty-state-circle">🛍️</div>
+              <div class="empty-state-title">Keranjang kosong</div>
+              <div class="empty-state-sub">Pilih barang dari daftar atau scan barcode kemasan untuk mulai transaksi.</div>
+              <div class="empty-state-actions">
+                <div class="empty-action-btn" onclick="openScanner('cart')">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
+                  Scan Barcode
+                </div>
+                <div class="empty-action-btn sec" onclick="toggleCartSearch()">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  Cari Barang
+                </div>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -341,7 +353,11 @@
   <!-- ===== KANAN: Riwayat Transaksi ===== -->
   <aside class="history-panel" data-tab="riwayat">
     <div class="history-header">
-      <h2 id="historyTitle">Riwayat Hari Ini</h2>
+      <div class="history-header-top">
+        <h2 id="historyTitle">Riwayat Hari Ini</h2>
+        <!-- Tombol close hanya tampil saat panel-open (tablet/laptop) -->
+        <button class="history-close-btn" id="historyCloseBtn" onclick="closeHistory()" title="Tutup">✕</button>
+      </div>
       <div class="history-stats">
         <div class="stat">
           <span class="stat-label">Total Transaksi</span>
@@ -603,6 +619,28 @@
         <div class="scanner-hint" id="scannerHint">Posisikan barcode di dalam kotak</div>
       </div>
 
+      <!-- Scanner controls -->
+      <div class="scanner-controls">
+        <div class="scanner-ctrl-btn" id="ctrlFlash" onclick="toggleFlash()">
+          <span class="ctrl-icon">🔦</span>
+          <span class="ctrl-label">Flash</span>
+        </div>
+        <div class="scanner-ctrl-btn" id="ctrlZoom" onclick="toggleZoom()">
+          <span class="ctrl-icon">🔍</span>
+          <span class="ctrl-label">Zoom</span>
+        </div>
+        <div class="scanner-ctrl-btn" id="ctrlManual" onclick="toggleManualInput()">
+          <span class="ctrl-icon">⌨️</span>
+          <span class="ctrl-label">Manual</span>
+        </div>
+      </div>
+      <!-- Manual input panel -->
+      <div class="scanner-manual-panel" id="manualInputPanel" style="display:none">
+        <input type="text" class="scanner-manual-input" id="manualBarcodeInput"
+          placeholder="Ketik kode barcode manual..."
+          onkeydown="if(event.key==='Enter') submitManualBarcode()" />
+      </div>
+
       <!-- Result area: muncul saat barcode terdeteksi -->
       <div class="scanner-result" id="scannerResult" style="display:none">
         <div class="scanner-result-code" id="scannerResultCode"></div>
@@ -649,6 +687,35 @@
   <!-- html5-qrcode: library scan barcode/QR paling reliable untuk mobile -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 
+  <!-- Theme script: NON-module agar bisa dipanggil dari onclick HTML -->
+  <script>
+    // Load & apply saved theme immediately (prevent flash)
+    (function() {
+      var saved = localStorage.getItem('kasirku_theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', saved);
+    })();
+
+    function toggleTheme() {
+      var html    = document.documentElement;
+      var current = html.getAttribute('data-theme') || 'dark';
+      var next    = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('kasirku_theme', next);
+      var icon  = document.querySelector('#themeToggleBtn .theme-icon');
+      var label = document.getElementById('themeLabel');
+      if (icon)  icon.textContent  = next === 'dark' ? '🌙' : '☀️';
+      if (label) label.textContent = next === 'dark' ? 'Dark' : 'Light';
+    }
+
+    // Sync button text after page load
+    document.addEventListener('DOMContentLoaded', function() {
+      var saved = localStorage.getItem('kasirku_theme') || 'dark';
+      var icon  = document.querySelector('#themeToggleBtn .theme-icon');
+      var label = document.getElementById('themeLabel');
+      if (icon)  icon.textContent  = saved === 'dark' ? '🌙' : '☀️';
+      if (label) label.textContent = saved === 'dark' ? 'Dark' : 'Light';
+    });
+  </script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

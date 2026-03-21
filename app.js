@@ -400,6 +400,16 @@ window.addToCart = function(itemId) {
     cart.push({ itemId, name: item.name, price: item.price, qty: 1 });
   }
   renderCart(); recalculate();
+  // Flash feedback on item card
+  const cards = document.querySelectorAll('.item-card');
+  cards.forEach(card => {
+    if (card.getAttribute('onclick')?.includes(itemId)) {
+      card.classList.remove('flash-add');
+      void card.offsetWidth;
+      card.classList.add('flash-add');
+      setTimeout(() => card.classList.remove('flash-add'), 600);
+    }
+  });
   showToast(`${item.name} ditambahkan`);
 }
 
@@ -859,7 +869,29 @@ window.switchTab = function(tabName) {
 }
 
 window.toggleHistory = function() {
-  document.querySelector('.history-panel').classList.toggle('panel-open');
+  const panel = document.querySelector('.history-panel');
+  const isOpen = panel.classList.contains('panel-open');
+  if (isOpen) {
+    closeHistory();
+  } else {
+    panel.classList.add('panel-open');
+    // Tambah overlay agar bisa klik luar untuk tutup
+    let overlay = document.getElementById('historyOverlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'historyOverlay';
+      overlay.className = 'history-overlay';
+      overlay.onclick = closeHistory;
+      document.body.appendChild(overlay);
+    }
+    overlay.classList.add('active');
+  }
+}
+
+window.closeHistory = function() {
+  document.querySelector('.history-panel').classList.remove('panel-open');
+  const overlay = document.getElementById('historyOverlay');
+  if (overlay) overlay.classList.remove('active');
 }
 
 function updateCartBadge() {
@@ -1286,4 +1318,88 @@ window.addToCartFromSearch = function(itemId) {
   addToCart(itemId);
   // Re-render hasil search agar qty badge update
   renderCartSearch();
+}
+
+// ── SCANNER CONTROLS ──────────────────────────
+let torchTrack   = null;
+let zoomLevel    = 1;
+let manualOpen   = false;
+
+window.toggleFlash = function() {
+  const btn = document.getElementById('ctrlFlash');
+  if (!btn) return;
+  const isOn = btn.classList.contains('active');
+  if (!torchTrack) {
+    const video = document.getElementById('scannerQrRegion')?.querySelector('video');
+    if (video && video.srcObject) {
+      torchTrack = video.srcObject.getVideoTracks()[0];
+    }
+  }
+  if (torchTrack) {
+    const caps = torchTrack.getCapabilities?.() || {};
+    if (caps.torch) {
+      torchTrack.applyConstraints({ advanced: [{ torch: !isOn }] })
+        .then(() => {
+          btn.classList.toggle('active', !isOn);
+          btn.querySelector('.ctrl-label').textContent = !isOn ? 'Flash ON' : 'Flash';
+        })
+        .catch(() => showToast('Flash tidak tersedia di device ini', 'error'));
+    } else {
+      showToast('Flash tidak tersedia di device ini', 'error');
+    }
+  } else {
+    showToast('Kamera belum aktif', 'error');
+  }
+}
+
+window.toggleZoom = function() {
+  const btn = document.getElementById('ctrlZoom');
+  if (!btn) return;
+  const video = document.getElementById('scannerQrRegion')?.querySelector('video');
+  if (!video || !video.srcObject) { showToast('Kamera belum aktif', 'error'); return; }
+  const track = video.srcObject.getVideoTracks()[0];
+  const caps  = track?.getCapabilities?.() || {};
+  if (!caps.zoom) { showToast('Zoom tidak tersedia di device ini', 'error'); return; }
+  const levels = [1, 1.5, 2, 2.5];
+  const idx    = levels.indexOf(zoomLevel);
+  zoomLevel    = levels[(idx + 1) % levels.length];
+  track.applyConstraints({ advanced: [{ zoom: zoomLevel }] })
+    .then(() => {
+      btn.classList.toggle('active', zoomLevel > 1);
+      btn.querySelector('.ctrl-label').textContent = zoomLevel > 1 ? `${zoomLevel}×` : 'Zoom';
+    })
+    .catch(() => showToast('Zoom tidak tersedia', 'error'));
+}
+
+window.toggleManualInput = function() {
+  const panel = document.getElementById('manualInputPanel');
+  const btn   = document.getElementById('ctrlManual');
+  if (!panel || !btn) return;
+  manualOpen = !manualOpen;
+  panel.style.display = manualOpen ? 'block' : 'none';
+  btn.classList.toggle('active', manualOpen);
+  if (manualOpen) {
+    setTimeout(() => document.getElementById('manualBarcodeInput')?.focus(), 100);
+  }
+}
+
+window.submitManualBarcode = function() {
+  const input = document.getElementById('manualBarcodeInput');
+  if (!input) return;
+  const code = input.value.trim();
+  if (!code) return;
+  input.value = '';
+  // Process same as scan
+  const resultEl = document.getElementById('scannerResult');
+  if (resultEl) resultEl.style.display = 'flex';
+  const codeEl = document.getElementById('scannerResultCode');
+  if (codeEl) codeEl.textContent = code;
+  lastScannedCode = code;
+  if (scannerMode === 'cart') {
+    handleCartScan(code);
+  } else {
+    handleAddScan(code);
+  }
+  // Close manual panel after submit
+  toggleManualInput();
 }
