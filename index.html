@@ -631,6 +631,10 @@
         <div class="scanner-hint" id="scannerHint">Posisikan barcode di dalam kotak</div>
         <!-- Feedback overlay: muncul di dalam viewport saat scan berhasil/gagal -->
         <div class="scanner-feedback-overlay" id="scannerFeedback"></div>
+        <!-- Debug info: tampil di pojok kiri atas viewport, hanya muncul kalau ada masalah -->
+        <div id="scannerDebug" style="display:none;position:absolute;top:4px;left:4px;z-index:30;
+          background:rgba(0,0,0,.75);color:#0f8;font-size:10px;font-family:monospace;
+          padding:3px 6px;border-radius:4px;max-width:90%;word-break:break-all;"></div>
       </div>
 
       <!-- Scanner controls -->

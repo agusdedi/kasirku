@@ -920,7 +920,9 @@ window.addEventListener('resize', () => {
 
 // ── BARCODE SCANNER ───────────────────────────
 // Android Chrome : native BarcodeDetector (sangat cepat, ~5ms/frame)
-// iOS Safari/Chrome: ZBar WASM decode dari ImageData (cepat, ~5-15ms/frame)
+// ── ENGINE SCAN ──
+// Android: BarcodeDetector native (hardware, ~5ms)
+// iOS: ZBar WASM compiled dari C (~10ms) — JAUH lebih cepat dari ZXing JS (~200ms+)
 // Keduanya pakai requestAnimationFrame loop tanpa overhead blob/URL
 // ─────────────────────────────────────────────
 
@@ -952,23 +954,34 @@ let _cropCanvas = null;
 let _cropCtx    = null;
 const _CROP_SIZE = 400; // pixel — cukup besar untuk barcode tapi ringan diproses
 
+
+// ── DEBUG HELPER (tampil di layar iPhone) ──
+function _dbg(msg, type) {
+  const el = document.getElementById('scannerDebug');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.color = type === 'ok' ? '#0f8' : type === 'err' ? '#f55' : '#ff0';
+  if (type === 'ok') setTimeout(() => { if (el) el.style.display = 'none'; }, 3000);
+}
+
 async function _initZBar() {
   if (_zbarScanner) return true;
   try {
     const zbar = window.zbarWasm;
-    if (!zbar) return false;
-
-    // ZBar WASM getDefaultScanner — setup sekali, dipakai terus
+    if (!zbar) {
+      console.warn('[ZBar] window.zbarWasm belum tersedia');
+      _dbg('ERR: zbarWasm not loaded', 'err');
+      return false;
+    }
+    // getDefaultScanner — setup ZBar scanner WASM
     _zbarScanner = await zbar.getDefaultScanner();
-
-    // Siapkan canvas crop sekali saja
-    _cropCanvas        = document.createElement('canvas');
-    _cropCanvas.width  = _CROP_SIZE;
-    _cropCanvas.height = _CROP_SIZE;
-    _cropCtx = _cropCanvas.getContext('2d', { willReadFrequently: true });
+    console.log('[ZBar] scanner siap');
+    _dbg('ZBar siap ✓', 'ok');
     return true;
   } catch(e) {
-    console.error('ZBar init error:', e);
+    console.error('[ZBar] init error:', e);
+    _dbg('ERR init: ' + e.message, 'err');
     return false;
   }
 }
@@ -1100,11 +1113,16 @@ async function _startStream() {
   // 2. ZBar WASM — iOS Safari/Chrome (jauh lebih cepat dari ZXing, compiled C)
   if (!_useNative) {
     if (!_zbarScanner) {
-      // Init ZBar jika belum (seharusnya sudah di-preload)
-      _initZBar().then(() => {
-        if (scannerRunning) _scanLoop();
-      });
-      return; // tunggu init selesai
+      // Init ZBar — await langsung karena openScanner sudah async
+      const ok = await _initZBar();
+      if (!ok || !scannerRunning) return; // gagal init atau scanner ditutup
+    }
+    // Siapkan crop canvas jika belum ada (bisa null setelah closeScanner)
+    if (!_cropCanvas) {
+      _cropCanvas        = document.createElement('canvas');
+      _cropCanvas.width  = _CROP_SIZE;
+      _cropCanvas.height = _CROP_SIZE;
+      _cropCtx = _cropCanvas.getContext('2d', { willReadFrequently: true });
     }
   }
 
@@ -1121,6 +1139,12 @@ function _scanLoop() {
   }
 
   _frameCount++;
+  // Update hint setiap ~60 frame agar user tahu scanner aktif (animasi titik)
+  if (_frameCount % 60 === 0) {
+    const dots = '.'.repeat((_frameCount / 60) % 4);
+    const hintEl = document.getElementById('scannerHint');
+    if (hintEl && !scanCooldown) hintEl.textContent = 'Arahkan barcode ke kotak' + dots;
+  }
 
   if (_useNative && _detector) {
     // ── PATH A: Native BarcodeDetector (Android Chrome) ──
@@ -1176,8 +1200,10 @@ function _scanLoop() {
         if (symbols && symbols.length > 0) {
           // Decode result — ZBar kembalikan typed array, decode ke string
           const sym = symbols[0];
-          const code = sym.decode ? sym.decode() : (sym.data ? new TextDecoder().decode(sym.data) : null);
+          // ZBar decode() tanpa argumen = utf8 default
+          const code = typeof sym.decode === 'function' ? sym.decode() : null;
           if (code) {
+            _dbg('✓ ' + code, 'ok');
             _onDetected(code);
             return;
           }
@@ -1189,17 +1215,15 @@ function _scanLoop() {
       });
 
   } else {
-    // ZBar belum siap — init dulu (harusnya sudah preloaded)
-    _initZBar().then(ok => {
-      if (ok && scannerRunning) {
-        _frameCount = 0;
-        _rafId = requestAnimationFrame(_scanLoop);
-      } else {
-        setTimeout(() => {
-          if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
-        }, 500);
-      }
-    });
+    // ZBar belum siap — tidak seharusnya terjadi (openScanner sudah init)
+    // Tapi kalau terjadi, tampilkan feedback dan coba lagi
+    const hintEl = document.getElementById('scannerHint');
+    if (hintEl && hintEl.textContent === 'Posisikan barcode di dalam kotak') {
+      hintEl.textContent = 'Memuat engine scan...';
+    }
+    setTimeout(() => {
+      if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
+    }, 200);
   }
 }
 
