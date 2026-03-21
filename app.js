@@ -1192,6 +1192,25 @@ function _scanLoop() {
 }
 
 // ── DETECTED ──────────────────────────────────
+
+// ── FEEDBACK OVERLAY (di dalam viewport, pasti terlihat di iOS) ──
+function _showFeedback(msg, type, duration) {
+  const el = document.getElementById('scannerFeedback');
+  if (!el) return;
+  el.textContent = msg;
+  el.className   = `scanner-feedback-overlay ${type} show`;
+  clearTimeout(el._timer);
+  if (duration) {
+    el._timer = setTimeout(() => {
+      el.classList.remove('show');
+    }, duration);
+  }
+}
+function _hideFeedback() {
+  const el = document.getElementById('scannerFeedback');
+  if (el) el.classList.remove('show');
+}
+
 function _onDetected(code) {
   if (!code || !scannerRunning || scanCooldown) return;
   if (code === lastScannedCode) return;
@@ -1202,16 +1221,20 @@ function _onDetected(code) {
   // Hentikan loop sementara
   if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
 
-  // Flash visual + suara klik
+  // Flash viewport hijau
   _flashSuccess();
 
-  // Tampilkan kode
+  // Tampilkan kode di result area (desktop/tablet)
   const resultEl = document.getElementById('scannerResult');
   if (resultEl) resultEl.style.display = 'flex';
   const codeEl = document.getElementById('scannerResultCode');
   if (codeEl) codeEl.textContent = code;
+
+  // Feedback overlay di viewport — pasti terlihat di iOS
+  _showFeedback('📷 ' + code, 'info', 0); // 0 = jangan auto-hide, tunggu handler
+
   const hintEl = document.getElementById('scannerHint');
-  if (hintEl) hintEl.textContent = '✓ Barcode terdeteksi!';
+  if (hintEl) hintEl.textContent = '✓ Terdeteksi!';
 
   if (scannerMode === 'cart') {
     _handleCartScan(code);
@@ -1253,8 +1276,12 @@ function _flashSuccess() {
 function _resumeScan() {
   scanCooldown    = false;
   lastScannedCode = null;
+  _hideFeedback();
   const hintEl = document.getElementById('scannerHint');
-  if (hintEl) hintEl.textContent = 'Posisikan barcode di dalam kotak';
+  if (hintEl) {
+    hintEl.textContent = 'Posisikan barcode di dalam kotak';
+    hintEl.style.cssText = ''; // reset style jika ada override
+  }
   if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
 }
 
@@ -1264,36 +1291,21 @@ function _handleCartScan(code) {
 
   if (item) {
     addToCart(item.id);
-
-    // Tampilkan notif sukses di modal
-    const cartMsg = document.getElementById('scannerCartMsg');
-    if (cartMsg) {
-      cartMsg.style.display = 'block';
-      const msgEl = cartMsg.querySelector('.scanner-found-msg');
-      if (msgEl) msgEl.innerHTML =
-        `<span style="color:var(--grn);font-weight:700">✓ "${item.name}" ditambahkan ke keranjang</span>`;
-    }
-
-    // Auto lanjut scan setelah 1.2 detik
+    // Feedback overlay hijau — terlihat langsung di viewport
+    _showFeedback(`✓ ${item.name} ditambahkan`, 'success', 1500);
+    // Auto lanjut scan setelah 1.5 detik
     setTimeout(() => {
       if (!scannerRunning) return;
-      if (cartMsg) cartMsg.style.display = 'none';
+      _hideFeedback();
       const resultEl = document.getElementById('scannerResult');
       if (resultEl) resultEl.style.display = 'none';
       _resumeScan();
-    }, 1200);
+    }, 1500);
 
   } else {
-    // Barang tidak ditemukan
-    const cartMsg = document.getElementById('scannerCartMsg');
-    if (cartMsg) {
-      cartMsg.style.display = 'block';
-      const msgEl = cartMsg.querySelector('.scanner-found-msg');
-      if (msgEl) msgEl.innerHTML =
-        `<span style="color:var(--red)">❌ Barang tidak ditemukan di daftar.<br>
-         <small>Tambahkan dulu via tab Barang → Scan.</small></span>`;
-    }
-    // Flash merah
+    // Barang tidak ditemukan — feedback overlay merah
+    _showFeedback('❌ Barang tidak ditemukan\nTambahkan dulu via tab Barang', 'error', 2500);
+    // Flash border merah di viewport
     const vp = document.querySelector('.scanner-viewport');
     if (vp) {
       vp.style.outline = '4px solid #f0566a';
@@ -1302,7 +1314,7 @@ function _handleCartScan(code) {
     }
     setTimeout(() => {
       if (!scannerRunning) return;
-      if (cartMsg) cartMsg.style.display = 'none';
+      _hideFeedback();
       const resultEl = document.getElementById('scannerResult');
       if (resultEl) resultEl.style.display = 'none';
       _resumeScan();
@@ -1315,36 +1327,37 @@ function _handleAddScan(code) {
   const addForm   = document.getElementById('scannerAddForm');
   const addFields = document.getElementById('scannerAddFields');
   const foundMsg  = document.getElementById('scannerFoundMsg');
-
-  if (addForm) addForm.style.display = 'block';
-
-  const existing = items.find(i => i.barcode === code);
+  const existing  = items.find(i => i.barcode === code);
 
   if (existing) {
-    if (foundMsg) foundMsg.innerHTML =
-      `<span style="color:var(--grn);font-weight:700">✓ "${existing.name}" sudah ada di daftar.</span>`;
-    if (addFields) addFields.style.display = 'none';
-
+    // Sudah ada — feedback overlay hijau, lanjut scan
+    _showFeedback(`✓ "${existing.name}" sudah ada di daftar`, 'success', 2000);
+    if (addForm) addForm.style.display = 'none';
     setTimeout(() => {
       if (!scannerRunning) return;
-      if (addForm) addForm.style.display = 'none';
+      _hideFeedback();
       const resultEl = document.getElementById('scannerResult');
       if (resultEl) resultEl.style.display = 'none';
       _resumeScan();
     }, 2000);
 
   } else {
-    // Barang baru
+    // Barang baru — sembunyikan feedback overlay, tampilkan form
+    _hideFeedback();
+    const hintEl = document.getElementById('scannerHint');
+    if (hintEl) hintEl.textContent = 'Isi detail barang di bawah';
+    if (addForm) addForm.style.display = 'block';
     if (foundMsg) foundMsg.innerHTML =
-      `<span style="color:var(--acc2)">Barcode <b>${code}</b> — isi detail barang:</span>`;
+      `<span style="color:var(--acc2)">Barcode <b>${code}</b> baru — lengkapi detail:</span>`;
     if (addFields) addFields.style.display = 'flex';
-
     ['scanNewName','scanNewPrice','scanNewStock','scanNewCategory'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
-    setTimeout(() => document.getElementById('scanNewName')?.focus(), 100);
-    // Jangan resume — tunggu user isi form
+    // Scroll modal ke bawah agar form terlihat di iOS
+    const box = document.querySelector('.scanner-modal-box');
+    if (box) setTimeout(() => box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' }), 100);
+    setTimeout(() => document.getElementById('scanNewName')?.focus(), 200);
   }
 }
 

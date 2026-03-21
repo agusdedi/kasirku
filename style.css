@@ -330,7 +330,7 @@ label{font-size:11px;font-weight:600;color:var(--mut);text-transform:uppercase;l
 .scanner-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:200;align-items:center;justify-content:center;padding:16px}
 .scanner-modal-overlay.active{display:flex}
 [data-theme="light"] .scanner-modal-overlay{background:rgba(0,0,0,.7)}
-.scanner-modal-box{background:var(--s1);border:1px solid var(--br);border-radius:var(--r16);width:100%;max-width:420px;overflow:hidden;display:flex;flex-direction:column}
+.scanner-modal-box{background:var(--s1);border:1px solid var(--br);border-radius:var(--r16);width:100%;max-width:420px;overflow-y:auto;display:flex;flex-direction:column}
 .scanner-header{display:flex;justify-content:space-between;align-items:flex-start;padding:14px 16px 10px;border-bottom:1px solid var(--br);flex-shrink:0}
 .scanner-title{font-family:var(--font-head);font-size:15px;font-weight:800;color:var(--txt)}
 .scanner-subtitle{font-size:11px;color:var(--mut);margin-top:2px}
@@ -352,6 +352,27 @@ label{font-size:11px;font-weight:600;color:var(--mut);text-transform:uppercase;l
 @keyframes scanLine{0%{top:0%;opacity:1}50%{top:95%;opacity:1}100%{top:0%;opacity:1}}
 .scanner-hint{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.65);border-radius:20px;color:#fff;font-size:11px;padding:4px 12px;white-space:nowrap}
 .scanner-viewport.flash::after{content:'';position:absolute;inset:0;background:rgba(35,209,139,.28);animation:flashFade .4s ease-out forwards}
+
+/* Feedback overlay — tampil di dalam viewport, pasti terlihat di semua ukuran layar */
+.scanner-feedback-overlay{
+  display:none;
+  position:absolute;
+  left:50%;bottom:16px;
+  transform:translateX(-50%);
+  z-index:20;
+  padding:10px 20px;
+  border-radius:var(--r10);
+  font-size:14px;font-weight:700;
+  text-align:center;line-height:1.4;
+  white-space:nowrap;
+  animation:feedbackPop .25s cubic-bezier(.34,1.56,.64,1) forwards;
+  max-width:90%;white-space:normal;
+}
+.scanner-feedback-overlay.show{display:block}
+.scanner-feedback-overlay.success{background:rgba(35,209,139,.95);color:#071510}
+.scanner-feedback-overlay.error{background:rgba(240,86,106,.95);color:#fff}
+.scanner-feedback-overlay.info{background:rgba(139,124,248,.95);color:#fff}
+@keyframes feedbackPop{0%{transform:translateX(-50%) scale(.8);opacity:0}100%{transform:translateX(-50%) scale(1);opacity:1}}
 @keyframes flashFade{from{opacity:1}to{opacity:0}}
 .scanner-controls{display:flex;gap:6px;padding:10px 12px;background:var(--s2);border-top:1px solid var(--br);flex-shrink:0}
 .scanner-ctrl-btn{flex:1;background:var(--s3);border:1px solid var(--br);border-radius:var(--r8);padding:8px 6px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;transition:border-color .15s,background .15s}
