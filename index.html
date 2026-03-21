@@ -8,13 +8,21 @@
   <link rel="icon" type="image/x-icon" href="favicon.ico" />
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png" />
+  <!-- Apple Touch Icon — urutan penting, dari terbesar ke terkecil -->
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+  <link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon-152x152.png" />
+  <link rel="apple-touch-icon" sizes="120x120" href="apple-touch-icon-120x120.png" />
+  <!-- Precomposed: cegah Safari tambahkan efek glossy -->
+  <link rel="apple-touch-icon-precomposed" href="apple-touch-icon-precomposed.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="android-chrome-192x192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="android-chrome-512x512.png" />
   <link rel="manifest" href="site.webmanifest" />
   <link rel="stylesheet" href="style.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <!-- iOS camera permission hint -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <!-- env.js HARUS dimuat di head, sebelum module scripts -->
   <script src="env.js"></script>
@@ -684,8 +692,10 @@
     </div>
   </div>
 
-  <!-- html5-qrcode: library scan barcode/QR paling reliable untuk mobile -->
+  <!-- html5-qrcode sebagai fallback decode engine -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+  <!-- BarcodeDetector polyfill untuk iOS (tidak punya native BarcodeDetector) -->
+  <script src="https://cdn.jsdelivr.net/npm/barcode-detector@2/dist/es2019/barcode-detector.min.js"></script>
 
   <!-- Theme script: NON-module agar bisa dipanggil dari onclick HTML -->
   <script>

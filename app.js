@@ -961,15 +961,38 @@ window.openScanner = async function(mode) {
   try {
     await _startStream();
   } catch(e) {
+    scannerRunning = false;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     let msg = 'Tidak bisa akses kamera.';
-    if (/NotAllowed|Permission/i.test(e.toString()))
-      msg = 'Izin kamera ditolak. Izinkan di pengaturan browser.';
-    else if (/NotFound/i.test(e.toString()))
-      msg = 'Kamera tidak ditemukan.';
-    else if (/NotReadable|busy/i.test(e.toString()))
-      msg = 'Kamera sedang dipakai aplikasi lain.';
+
+    if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError' ||
+        /NotAllowed|Permission/i.test(e.toString())) {
+      msg = isIOS
+        ? 'Akses kamera ditolak. Buka Settings → Safari → Kamera → Izinkan, lalu coba lagi.'
+        : 'Izin kamera ditolak. Klik ikon 🔒 di address bar → izinkan Kamera → refresh halaman.';
+    } else if (e.name === 'NotFoundError' || /NotFound/i.test(e.toString())) {
+      msg = 'Kamera tidak ditemukan di perangkat ini.';
+    } else if (e.name === 'NotReadableError' || /NotReadable|busy/i.test(e.toString())) {
+      msg = 'Kamera sedang dipakai aplikasi lain. Tutup dulu lalu coba lagi.';
+    } else if (/HTTPS|secure/i.test(e.message || '')) {
+      msg = 'Kamera hanya bisa diakses via HTTPS.';
+    }
+
+    // Tampilkan pesan error di dalam viewport scanner (lebih terlihat di mobile)
+    const hintEl = document.getElementById('scannerHint');
+    if (hintEl) {
+      hintEl.textContent    = '❌ ' + msg;
+      hintEl.style.cssText  = `
+        position:absolute;left:50%;bottom:50%;
+        transform:translate(-50%,50%);
+        background:rgba(240,86,106,.9);
+        color:#fff;font-size:12px;font-weight:600;
+        border-radius:8px;padding:10px 16px;
+        white-space:normal;text-align:center;
+        max-width:85%;line-height:1.5;
+      `;
+    }
     showToast(msg, 'error');
-    window.closeScanner();
   }
 }
 
@@ -977,34 +1000,71 @@ window.openScanner = async function(mode) {
 async function _startStream() {
   _stopAll();
 
-  // Ambil elemen video — html5-qrcode inject ke #scannerQrRegion
-  // kita buat video kita sendiri yang lebih controllable
+  // Buat video element
   const region = document.getElementById('scannerQrRegion');
   region.innerHTML = '';
-
   _video = document.createElement('video');
-  _video.setAttribute('playsinline', '');
+  _video.setAttribute('playsinline', '');   // WAJIB untuk iOS
   _video.setAttribute('muted', '');
   _video.setAttribute('autoplay', '');
   _video.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
   region.appendChild(_video);
 
-  // Constraint: resolusi tinggi, kamera belakang, autofocus, exposure
-  const constraints = {
-    video: {
-      facingMode: { ideal: 'environment' },
-      width:      { ideal: 1920, min: 640 },
-      height:     { ideal: 1080, min: 480 },
-      frameRate:  { ideal: 30 },
-      focusMode:  { ideal: 'continuous' },
-      exposureMode: { ideal: 'continuous' },
-      whiteBalanceMode: { ideal: 'continuous' },
-    }
-  };
+  // Cek ketersediaan mediaDevices (perlu HTTPS)
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new Error('Camera API tidak tersedia. Pastikan menggunakan HTTPS.');
+  }
 
-  _stream = await navigator.mediaDevices.getUserMedia(constraints);
+  // Progressive fallback constraints:
+  // iOS Safari MENOLAK constraint yang tidak dikenal (focusMode dll)
+  // Jadi kita coba dari yang paling lengkap ke paling sederhana
+  const constraintSets = [
+    // 1. Ideal — Android Chrome, desktop
+    {
+      video: {
+        facingMode: { ideal: 'environment' },
+        width:  { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 30 },
+      }
+    },
+    // 2. iOS-safe — hanya facingMode, tanpa constraint yang bisa reject
+    {
+      video: {
+        facingMode: { ideal: 'environment' },
+      }
+    },
+    // 3. Fallback minimal — jika semua gagal
+    {
+      video: true
+    },
+  ];
+
+  let lastErr = null;
+  for (const constraints of constraintSets) {
+    try {
+      _stream = await navigator.mediaDevices.getUserMedia(constraints);
+      break; // berhasil
+    } catch(e) {
+      lastErr = e;
+      // Jika NotAllowed (user menolak), langsung lempar — jangan retry
+      if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') throw e;
+      // Constraint gagal, coba yang lebih sederhana
+      continue;
+    }
+  }
+
+  if (!_stream) throw lastErr || new Error('Gagal membuka kamera.');
+
   _video.srcObject = _stream;
-  await _video.play();
+
+  // iOS butuh interaksi user sebelum play — tapi karena dipanggil dari onclick sudah aman
+  try {
+    await _video.play();
+  } catch(e) {
+    // Safari kadang throw AbortError tapi video tetap jalan — abaikan
+    if (e.name !== 'AbortError') throw e;
+  }
 
   // Simpan track untuk torch/zoom
   _torchTrack = _stream.getVideoTracks()[0];
@@ -1013,18 +1073,27 @@ async function _startStream() {
   _canvas = document.createElement('canvas');
   _ctx    = _canvas.getContext('2d', { willReadFrequently: true });
 
-  // Cek native BarcodeDetector
+  // Inisialisasi BarcodeDetector (native atau polyfill)
+  // Polyfill dari cdn.jsdelivr.net otomatis register window.BarcodeDetector jika belum ada
   _useNative = false;
+  _detector  = null;
+
   if ('BarcodeDetector' in window) {
     try {
+      // Polyfill & native sama-sama support getSupportedFormats
       const supported = await BarcodeDetector.getSupportedFormats();
-      const needed = ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code'];
-      const formats = needed.filter(f => supported.includes(f));
-      if (formats.length > 0) {
-        _detector  = new BarcodeDetector({ formats });
-        _useNative = true;
-      }
-    } catch(e) { /* fallback */ }
+      const needed    = ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code'];
+      // Polyfill biasanya support semua format, native tergantung OS
+      const formats   = supported.length > 0
+        ? needed.filter(f => supported.includes(f))
+        : needed; // polyfill support semua
+      const useFormats = formats.length > 0 ? formats : needed;
+      _detector  = new BarcodeDetector({ formats: useFormats });
+      _useNative = true;
+    } catch(e) {
+      // BarcodeDetector ada tapi gagal init — pakai html5-qrcode fallback
+      _useNative = false;
+    }
   }
 
   scannerRunning = true;
