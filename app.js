@@ -450,7 +450,24 @@ window.clearCart = function() {
 function renderCart() {
   const tbody = document.getElementById('cartBody');
   if (cart.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="empty-state"><div>🛍️</div><p>Keranjang kosong.<br/>Klik barang di sebelah kiri untuk menambahkan.</p></td></tr>`;
+    tbody.innerHTML = `
+      <tr id="emptyCart">
+        <td colspan="5" class="empty-state">
+          <div class="empty-state-circle">🛍️</div>
+          <div class="empty-state-title">Keranjang kosong</div>
+          <div class="empty-state-sub">Pilih barang dari daftar atau scan barcode kemasan untuk mulai transaksi.</div>
+          <div class="empty-state-actions">
+            <div class="empty-action-btn" onclick="openScanner('cart')">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
+              Scan Barcode
+            </div>
+            <div class="empty-action-btn sec" onclick="toggleCartSearch()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              Cari Barang
+            </div>
+          </div>
+        </td>
+      </tr>`;
     updateCartBadge(); return;
   }
   tbody.innerHTML = cart.map(c => `
