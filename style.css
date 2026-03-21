@@ -311,20 +311,45 @@ label{font-size:11px;font-weight:600;color:var(--mut);text-transform:uppercase;l
 .detail-sum-total{font-family:var(--font-head);font-size:16px;font-weight:800;color:var(--amb);border-top:1px solid var(--br);padding-top:9px;margin-top:2px}
 .detail-sum-change{font-weight:600;color:var(--grn)}
 .detail-actions{display:flex;gap:8px;justify-content:flex-end}
+/* ── RECEIPT (modal preview) — warna hardcoded agar konsisten di dark & light mode ── */
 .receipt{font-family:var(--font-mono);font-size:13px}
 .receipt-header{text-align:center;padding-bottom:10px}
-.receipt-header h2{font-family:var(--font-head);font-size:18px;font-weight:800;color:var(--acc2)}
-[data-theme="light"] .receipt-header h2{color:#4a3fc0}
-.receipt-header p{font-size:11px;color:var(--mut);margin-top:3px}
-.receipt-divider{border:none;border-top:1px dashed var(--br2);margin:10px 0}
+.receipt-header h2{font-family:var(--font-head);font-size:18px;font-weight:800;color:#6c5ce7}
+.receipt-header p{font-size:11px;color:#666;margin-top:3px}
+.receipt-kasir-info{font-size:11px;color:#666;margin-top:3px}
+.receipt-divider{border:none;border-top:1px dashed #bbb;margin:10px 0}
 .receipt-item{display:flex;justify-content:space-between;margin:3px 0;font-size:12px}
-.receipt-item-name{flex:1;color:var(--txt)}
-.receipt-item-sub{color:var(--amb)}
+.receipt-item-name{flex:1;color:#222}
+.receipt-item-sub{color:#c47f00;font-weight:500}
 .receipt-totals{display:flex;flex-direction:column;gap:5px}
-.receipt-row{display:flex;justify-content:space-between;font-size:12px;color:var(--txt2)}
-.receipt-total{font-size:14px;font-weight:700;color:var(--amb);border-top:1px dashed var(--br2);padding-top:6px}
-.receipt-change{color:var(--grn);font-weight:600}
-.receipt-footer{text-align:center;padding-top:12px;font-size:11px;color:var(--mut)}
+.receipt-row{display:flex;justify-content:space-between;font-size:12px;color:#444}
+.receipt-total{font-size:14px;font-weight:700;color:#c47f00;border-top:1px dashed #bbb;padding-top:6px}
+.receipt-change{color:#16a34a;font-weight:600}
+.receipt-footer{text-align:center;padding-top:12px;font-size:11px;color:#888}
+
+/* Receipt modal box — selalu background putih agar konsisten */
+#receiptModal .modal-box{background:#fff;color:#222;border-color:#ddd}
+
+/* ── @media print — cetak struk selalu hitam-putih bersih ── */
+@media print {
+  /* Sembunyikan semua kecuali konten struk */
+  body > *{display:none!important}
+  #receiptModal{display:block!important;position:static!important;background:none!important;padding:0!important}
+  #receiptModal .modal-box{display:block!important;box-shadow:none!important;border:none!important;padding:0!important;max-height:none!important;overflow:visible!important;background:#fff!important;color:#000!important}
+  #receiptModal .btn{display:none!important}
+
+  /* Force semua elemen struk ke warna hitam-putih */
+  .receipt{font-family:'Courier New',monospace;font-size:12px;color:#000}
+  .receipt-header h2{color:#000!important;font-size:16px}
+  .receipt-header p,.receipt-kasir-info{color:#333!important}
+  .receipt-divider{border-top:1px dashed #000!important}
+  .receipt-item-name{color:#000!important}
+  .receipt-item-sub{color:#000!important;font-weight:600}
+  .receipt-row{color:#333!important}
+  .receipt-total{color:#000!important;font-weight:800;border-top:1px dashed #000!important}
+  .receipt-change{color:#000!important;font-weight:700}
+  .receipt-footer{color:#555!important}
+}
 
 /* ── SCANNER ── */
 .scanner-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:200;align-items:center;justify-content:center;padding:16px}
