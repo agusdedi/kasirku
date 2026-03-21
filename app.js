@@ -21,6 +21,7 @@ let currentUser  = null;
 let isOwner      = false;
 let unsubItems   = null;
 let unsubTx      = null;
+let editingId    = null; // ID item yang sedang di-edit (null = mode tambah baru)
 
 // ── INIT ──────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
@@ -267,6 +268,9 @@ function showToast(msg, type = 'success') {
 
 // ── MANAJEMEN BARANG ──────────────────────────
 window.addItem = async function() {
+  // Jika sedang dalam mode edit, jalankan save edit
+  if (editingId) return saveEditItem(editingId);
+
   const name     = document.getElementById('itemName').value.trim();
   const price    = parseFloat(document.getElementById('itemPrice').value);
   const stock    = parseInt(document.getElementById('itemStock').value) || 0;
@@ -312,14 +316,16 @@ window.toggleFormBarang = function(forceOpen = false) {
 window.editItem = function(id) {
   const item = items.find(i => i.id === id);
   if (!item) return;
+  editingId = id;
   document.getElementById('itemName').value     = item.name;
   document.getElementById('itemPrice').value    = item.price;
   document.getElementById('itemStock').value    = item.stock;
   document.getElementById('itemCategory').value = item.category;
-  const btn = document.querySelector('.btn-primary[onclick="addItem()"]');
-  btn.textContent = '💾 Simpan Perubahan';
-  btn.setAttribute('onclick', `saveEditItem('${id}')`);
-  btn.style.background = 'var(--accent2)';
+  const btn = document.getElementById('btnAddItem');
+  if (btn) {
+    btn.textContent = '💾 Simpan Perubahan';
+    btn.style.background = 'var(--acc2)';
+  }
   document.getElementById('btnCancelEdit').style.display = 'block';
   // Otomatis buka form saat edit
   toggleFormBarang(true);
@@ -341,13 +347,17 @@ window.saveEditItem = async function(id) {
     showToast(`"${name}" berhasil diperbarui!`);
   } catch(e) { showToast('Gagal update: ' + e.message, 'error'); }
 }
+// Alias agar kompatibel jika masih dipanggil dari tempat lain
+window._saveEditItem = window.saveEditItem;
 
 window.cancelEdit = function() {
+  editingId = null;
   ['itemName','itemPrice','itemStock','itemCategory'].forEach(id => { document.getElementById(id).value=''; });
-  const btn = document.querySelector('.btn-primary');
-  btn.textContent = '+ Tambah Barang';
-  btn.setAttribute('onclick', 'addItem()');
-  btn.style.background = '';
+  const btn = document.getElementById('btnAddItem');
+  if (btn) {
+    btn.textContent = '+ Tambah Barang';
+    btn.style.background = '';
+  }
   document.getElementById('btnCancelEdit').style.display = 'none';
   // Tutup form setelah cancel/save
   const form = document.getElementById('formBarang');
