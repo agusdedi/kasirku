@@ -920,7 +920,7 @@ window.addEventListener('resize', () => {
 
 // ── BARCODE SCANNER ───────────────────────────
 // Android Chrome : native BarcodeDetector (sangat cepat, ~5ms/frame)
-// iOS Safari/Chrome: ZXing JS decode dari ImageData (cepat, ~30ms/frame)
+// iOS Safari/Chrome: ZBar WASM decode dari ImageData (cepat, ~5-15ms/frame)
 // Keduanya pakai requestAnimationFrame loop tanpa overhead blob/URL
 // ─────────────────────────────────────────────
 
@@ -935,15 +935,15 @@ let _canvas      = null;
 let _ctx         = null;
 let _rafId       = null;
 let _detector    = null;   // native BarcodeDetector (Android Chrome)
-let _zxingReader = null;   // ZXing fallback (iOS)
+let _zbarScanner = null;   // ZBar WASM scanner (iOS) — compiled C, jauh lebih cepat dari ZXing JS
 let _useNative   = false;
 let _torchTrack  = null;
 let _zoomLevel   = 1;
 let _manualOpen  = false;
 
 // ── INIT ZXING ────────────────────────────────
-// ZXing dari @zxing/library UMD expose sebagai window.ZXing
-// Throttle counter — ZXing hanya decode setiap N frame
+// ZBar WASM expose sebagai window.zbarWasm
+// Throttle counter — ZBar decode setiap N frame (lebih cepat dari ZXing, bisa 1:1 atau setiap 2 frame)
 let _frameCount = 0;
 const _DECODE_EVERY = 2; // decode setiap 2 frame (~15fps decode pada 30fps video)
 
@@ -952,26 +952,15 @@ let _cropCanvas = null;
 let _cropCtx    = null;
 const _CROP_SIZE = 400; // pixel — cukup besar untuk barcode tapi ringan diproses
 
-function _initZXing() {
-  if (_zxingReader) return true;
+async function _initZBar() {
+  if (_zbarScanner) return true;
   try {
-    const ZXing = window.ZXing;
-    if (!ZXing || !ZXing.MultiFormatReader) return false;
-    const hints = new Map();
-    // TRY_HARDER: coba lebih keras decode meski barcode miring/sebagian
-    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-    // Batasi format — makin sedikit format, makin cepat decode
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-      ZXing.BarcodeFormat.EAN_13,   // paling umum di produk Indonesia
-      ZXing.BarcodeFormat.EAN_8,
-      ZXing.BarcodeFormat.UPC_A,
-      ZXing.BarcodeFormat.UPC_E,
-      ZXing.BarcodeFormat.CODE_128,
-      ZXing.BarcodeFormat.CODE_39,
-      ZXing.BarcodeFormat.QR_CODE,
-    ]);
-    _zxingReader = new ZXing.MultiFormatReader();
-    _zxingReader.setHints(hints);
+    const zbar = window.zbarWasm;
+    if (!zbar) return false;
+
+    // ZBar WASM getDefaultScanner — setup sekali, dipakai terus
+    _zbarScanner = await zbar.getDefaultScanner();
+
     // Siapkan canvas crop sekali saja
     _cropCanvas        = document.createElement('canvas');
     _cropCanvas.width  = _CROP_SIZE;
@@ -979,9 +968,21 @@ function _initZXing() {
     _cropCtx = _cropCanvas.getContext('2d', { willReadFrequently: true });
     return true;
   } catch(e) {
+    console.error('ZBar init error:', e);
     return false;
   }
 }
+
+// Jalankan init ZBar di background saat halaman load — jadi saat scanner dibuka sudah siap
+function _preloadZBar() {
+  if (window.zbarWasm) {
+    _initZBar().catch(() => {});
+  } else {
+    // Tunggu script load
+    setTimeout(_preloadZBar, 500);
+  }
+}
+setTimeout(_preloadZBar, 1000);
 
 // ── OPEN SCANNER ──────────────────────────────
 window.openScanner = async function(mode) {
@@ -1096,9 +1097,15 @@ async function _startStream() {
     } catch(e) { /* fallback ke ZXing */ }
   }
 
-  // 2. ZXing — iOS Safari/Chrome, decode dari ImageData langsung (cepat)
+  // 2. ZBar WASM — iOS Safari/Chrome (jauh lebih cepat dari ZXing, compiled C)
   if (!_useNative) {
-    _initZXing();
+    if (!_zbarScanner) {
+      // Init ZBar jika belum (seharusnya sudah di-preload)
+      _initZBar().then(() => {
+        if (scannerRunning) _scanLoop();
+      });
+      return; // tunggu init selesai
+    }
   }
 
   _scanLoop();
@@ -1136,9 +1143,11 @@ function _scanLoop() {
         if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
       });
 
-  } else if (_zxingReader) {
-    // ── PATH B: ZXing (iOS Safari/Chrome) ──
-    // Throttle: skip frame ganjil agar CPU tidak penuh
+  } else if (_zbarScanner) {
+    // ── PATH B: ZBar WASM (iOS Safari/Chrome) ──
+    // ZBar adalah port dari library C — JAUH lebih cepat dari ZXing JS
+    // Bisa decode EAN-13 dalam ~5-15ms bahkan di iPhone lama
+    // Throttle setiap 2 frame agar tidak blocking UI
     if (_frameCount % _DECODE_EVERY !== 0) {
       _rafId = requestAnimationFrame(_scanLoop);
       return;
@@ -1147,47 +1156,50 @@ function _scanLoop() {
     const vw = _video.videoWidth;
     const vh = _video.videoHeight;
 
-    // Crop area tengah saja — barcode selalu diarahkan ke kotak tengah
-    // Ini mengurangi pixel yang diproses dari ~900K menjadi ~160K (6x lebih cepat)
-    const cropSize = Math.min(vw, vh, _CROP_SIZE * 2); // ambil area tengah
+    // Crop area tengah — barcode diarahkan ke kotak tengah viewport
+    const cropSize = Math.min(vw, vh, _CROP_SIZE * 2);
     const cropX    = Math.floor((vw - cropSize) / 2);
     const cropY    = Math.floor((vh - cropSize) / 2);
 
-    // Gambar area crop ke canvas kecil (_CROP_SIZE x _CROP_SIZE)
     _cropCtx.drawImage(
       _video,
-      cropX, cropY, cropSize, cropSize,   // source: area tengah video
-      0, 0, _CROP_SIZE, _CROP_SIZE        // dest: canvas kecil 400x400
+      cropX, cropY, cropSize, cropSize,
+      0, 0, _CROP_SIZE, _CROP_SIZE
     );
 
-    try {
-      const imageData = _cropCtx.getImageData(0, 0, _CROP_SIZE, _CROP_SIZE);
-      const ZXing     = window.ZXing;
-      const luminance = new ZXing.RGBLuminanceSource(
-        imageData.data, _CROP_SIZE, _CROP_SIZE
-      );
-      const bitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminance));
-      const result = _zxingReader.decode(bitmap);
-      if (result && scannerRunning && !scanCooldown) {
-        _onDetected(result.getText());
-      } else if (scannerRunning) {
-        _rafId = requestAnimationFrame(_scanLoop);
-      }
-    } catch(e) {
-      // NotFoundException — normal saat tidak ada barcode di frame
-      if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
-    }
+    const imageData = _cropCtx.getImageData(0, 0, _CROP_SIZE, _CROP_SIZE);
+
+    // ZBar scanImageData — async tapi sangat cepat karena WASM
+    window.zbarWasm.scanImageData(imageData, _zbarScanner)
+      .then(symbols => {
+        if (!scannerRunning || scanCooldown) return;
+        if (symbols && symbols.length > 0) {
+          // Decode result — ZBar kembalikan typed array, decode ke string
+          const sym = symbols[0];
+          const code = sym.decode ? sym.decode() : (sym.data ? new TextDecoder().decode(sym.data) : null);
+          if (code) {
+            _onDetected(code);
+            return;
+          }
+        }
+        if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
+      })
+      .catch(() => {
+        if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
+      });
 
   } else {
-    // Engine belum siap — coba init ZXing lagi
-    if (_initZXing()) {
-      _frameCount = 0;
-      _rafId = requestAnimationFrame(_scanLoop);
-    } else {
-      setTimeout(() => {
-        if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
-      }, 300);
-    }
+    // ZBar belum siap — init dulu (harusnya sudah preloaded)
+    _initZBar().then(ok => {
+      if (ok && scannerRunning) {
+        _frameCount = 0;
+        _rafId = requestAnimationFrame(_scanLoop);
+      } else {
+        setTimeout(() => {
+          if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
+        }, 500);
+      }
+    });
   }
 }
 
@@ -1424,8 +1436,8 @@ function _stopAll() {
   _torchTrack = null;
   _canvas = null;
   _ctx    = null;
-  // Reset ZXing reader dan crop canvas
-  _zxingReader = null;
+  // Reset ZBar scanner state (scanner object dipertahankan untuk reuse, hanya reset state)
+  // _zbarScanner tetap hidup agar decode berikutnya langsung siap
   _cropCanvas  = null;
   _cropCtx     = null;
   _frameCount  = 0;

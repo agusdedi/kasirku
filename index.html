@@ -698,8 +698,9 @@
     </div>
   </div>
 
-  <!-- ZXing: decode engine cepat untuk iOS (decode langsung dari ImageData) -->
-  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js"></script>
+  <!-- ZBar WASM: engine barcode compiled dari C — JAUH lebih cepat dari ZXing JS di iOS -->
+  <!-- Self-hosted agar tidak bergantung CDN eksternal dan load lebih cepat -->
+  <script src="/zbar-inlined.js"></script>
 
   <!-- Theme script: NON-module agar bisa dipanggil dari onclick HTML -->
   <script>
