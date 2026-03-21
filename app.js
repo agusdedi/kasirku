@@ -961,6 +961,12 @@ window.openScanner = async function(mode) {
   try {
     await _startStream();
   } catch(e) {
+    // Cek apakah stream sebenarnya sudah berjalan — iOS sering throw tapi kamera jalan
+    if (_stream && _stream.active && scannerRunning) {
+      console.warn('Scanner error ignored (stream active):', e.name);
+      return;
+    }
+
     scannerRunning = false;
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     let msg = 'Tidak bisa akses kamera.';
@@ -968,8 +974,8 @@ window.openScanner = async function(mode) {
     if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError' ||
         /NotAllowed|Permission/i.test(e.toString())) {
       msg = isIOS
-        ? 'Akses kamera ditolak. Buka Settings → Safari → Kamera → Izinkan, lalu coba lagi.'
-        : 'Izin kamera ditolak. Klik ikon 🔒 di address bar → izinkan Kamera → refresh halaman.';
+        ? 'Akses kamera ditolak. Buka Settings → Safari → Kamera → Izinkan.'
+        : 'Izin kamera ditolak. Klik 🔒 di address bar → izinkan Kamera → refresh.';
     } else if (e.name === 'NotFoundError' || /NotFound/i.test(e.toString())) {
       msg = 'Kamera tidak ditemukan di perangkat ini.';
     } else if (e.name === 'NotReadableError' || /NotReadable|busy/i.test(e.toString())) {
@@ -978,19 +984,10 @@ window.openScanner = async function(mode) {
       msg = 'Kamera hanya bisa diakses via HTTPS.';
     }
 
-    // Tampilkan pesan error di dalam viewport scanner (lebih terlihat di mobile)
     const hintEl = document.getElementById('scannerHint');
     if (hintEl) {
-      hintEl.textContent    = '❌ ' + msg;
-      hintEl.style.cssText  = `
-        position:absolute;left:50%;bottom:50%;
-        transform:translate(-50%,50%);
-        background:rgba(240,86,106,.9);
-        color:#fff;font-size:12px;font-weight:600;
-        border-radius:8px;padding:10px 16px;
-        white-space:normal;text-align:center;
-        max-width:85%;line-height:1.5;
-      `;
+      hintEl.textContent   = '❌ ' + msg;
+      hintEl.style.cssText = 'position:absolute;left:50%;bottom:50%;transform:translate(-50%,50%);background:rgba(240,86,106,.9);color:#fff;font-size:12px;font-weight:600;border-radius:8px;padding:10px 16px;white-space:normal;text-align:center;max-width:85%;line-height:1.5;z-index:10;';
     }
     showToast(msg, 'error');
   }
@@ -1000,103 +997,78 @@ window.openScanner = async function(mode) {
 async function _startStream() {
   _stopAll();
 
-  // Buat video element
+  // Buat video element dengan atribut wajib iOS
   const region = document.getElementById('scannerQrRegion');
   region.innerHTML = '';
   _video = document.createElement('video');
-  _video.setAttribute('playsinline', '');   // WAJIB untuk iOS
-  _video.setAttribute('muted', '');
-  _video.setAttribute('autoplay', '');
+  _video.setAttribute('playsinline',       '');  // WAJIB iOS — cegah fullscreen
+  _video.setAttribute('webkit-playsinline','');  // iOS < 10
+  _video.setAttribute('muted',             '');
+  _video.setAttribute('autoplay',          '');
   _video.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
   region.appendChild(_video);
 
-  // Cek ketersediaan mediaDevices (perlu HTTPS)
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    throw new Error('Camera API tidak tersedia. Pastikan menggunakan HTTPS.');
+  // Pastikan mediaDevices tersedia (butuh HTTPS)
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error('Camera API tidak tersedia — pastikan HTTPS');
   }
 
-  // Progressive fallback constraints:
-  // iOS Safari MENOLAK constraint yang tidak dikenal (focusMode dll)
-  // Jadi kita coba dari yang paling lengkap ke paling sederhana
-  const constraintSets = [
-    // 1. Ideal — Android Chrome, desktop
-    {
-      video: {
-        facingMode: { ideal: 'environment' },
-        width:  { ideal: 1280 },
-        height: { ideal: 720 },
-        frameRate: { ideal: 30 },
-      }
-    },
-    // 2. iOS-safe — hanya facingMode, tanpa constraint yang bisa reject
-    {
-      video: {
-        facingMode: { ideal: 'environment' },
-      }
-    },
-    // 3. Fallback minimal — jika semua gagal
-    {
-      video: true
-    },
-  ];
+  // iOS Safari SANGAT strict soal constraints
+  // Gunakan constraint paling sederhana dulu, lalu upgrade
+  let stream = null;
 
-  let lastErr = null;
-  for (const constraints of constraintSets) {
+  // Attempt 1: facingMode environment (kamera belakang) — paling umum
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } }
+    });
+  } catch(e1) {
+    if (e1.name === 'NotAllowedError' || e1.name === 'PermissionDeniedError') throw e1;
+    // Attempt 2: video:true — constraint paling minimal, selalu jalan jika ada kamera
     try {
-      _stream = await navigator.mediaDevices.getUserMedia(constraints);
-      break; // berhasil
-    } catch(e) {
-      lastErr = e;
-      // Jika NotAllowed (user menolak), langsung lempar — jangan retry
-      if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') throw e;
-      // Constraint gagal, coba yang lebih sederhana
-      continue;
+      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    } catch(e2) {
+      throw e2; // Benar-benar tidak bisa — lempar ke caller
     }
   }
 
-  if (!_stream) throw lastErr || new Error('Gagal membuka kamera.');
+  _stream      = stream;
+  _video.srcObject = stream;
+  _torchTrack  = stream.getVideoTracks()[0];
 
-  _video.srcObject = _stream;
-
-  // iOS butuh interaksi user sebelum play — tapi karena dipanggil dari onclick sudah aman
-  try {
-    await _video.play();
-  } catch(e) {
-    // Safari kadang throw AbortError tapi video tetap jalan — abaikan
-    if (e.name !== 'AbortError') throw e;
-  }
-
-  // Simpan track untuk torch/zoom
-  _torchTrack = _stream.getVideoTracks()[0];
-
-  // Siapkan canvas decode
+  // Siapkan canvas
   _canvas = document.createElement('canvas');
   _ctx    = _canvas.getContext('2d', { willReadFrequently: true });
 
-  // Inisialisasi BarcodeDetector (native atau polyfill)
-  // Polyfill dari cdn.jsdelivr.net otomatis register window.BarcodeDetector jika belum ada
+  // Set scannerRunning SEBELUM play agar catch di openScanner tahu stream sudah aktif
+  scannerRunning = true;
+
+  // Play — iOS sering throw tapi video tetap berjalan, jadi abaikan semua error
+  try { await _video.play(); } catch(e) { /* iOS quirk — abaikan */ }
+
+  // Tunggu video benar-benar punya dimensi (max 5 detik)
+  await new Promise(resolve => {
+    const check = () => {
+      if (_video.videoWidth > 0) return resolve();
+      setTimeout(check, 100);
+    };
+    check();
+    setTimeout(resolve, 5000); // timeout fallback
+  });
+
+  // Init BarcodeDetector — native (Android Chrome) atau polyfill (iOS via jsdelivr)
   _useNative = false;
   _detector  = null;
-
   if ('BarcodeDetector' in window) {
     try {
-      // Polyfill & native sama-sama support getSupportedFormats
       const supported = await BarcodeDetector.getSupportedFormats();
-      const needed    = ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code'];
-      // Polyfill biasanya support semua format, native tergantung OS
-      const formats   = supported.length > 0
-        ? needed.filter(f => supported.includes(f))
-        : needed; // polyfill support semua
-      const useFormats = formats.length > 0 ? formats : needed;
-      _detector  = new BarcodeDetector({ formats: useFormats });
+      const wanted    = ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code'];
+      const formats   = supported.length ? wanted.filter(f => supported.includes(f)) : wanted;
+      _detector  = new BarcodeDetector({ formats: formats.length ? formats : wanted });
       _useNative = true;
-    } catch(e) {
-      // BarcodeDetector ada tapi gagal init — pakai html5-qrcode fallback
-      _useNative = false;
-    }
+    } catch(e) { /* gunakan html5-qrcode fallback */ }
   }
 
-  scannerRunning = true;
   _scanLoop();
 }
 
