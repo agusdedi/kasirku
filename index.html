@@ -199,6 +199,24 @@
         class="customer-input-mobile" />
     </div>
 
+    <!-- Search Barang di Tab Transaksi -->
+    <div class="cart-search-panel" id="cartSearchPanel">
+      <div class="cart-search-header">
+        <input type="text" id="cartSearchInput" placeholder="🔍  Cari & tambah barang ke keranjang..."
+          oninput="renderCartSearch()" autocomplete="off" class="cart-search-input" />
+        <button class="cart-search-close" onclick="closeCartSearch()" title="Tutup">✕</button>
+      </div>
+      <div id="cartSearchResults" class="cart-search-results"></div>
+    </div>
+
+    <!-- Toggle search button -->
+    <div class="cart-search-toggle-row">
+      <button class="cart-search-toggle-btn" onclick="toggleCartSearch()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Cari Barang
+      </button>
+    </div>
+
     <!-- Keranjang Belanja -->
     <div class="cart-wrapper">
       <table class="cart-table">
@@ -627,8 +645,8 @@
     </div>
   </div>
 
-  <!-- ZXing untuk decode barcode (ringan, ~100KB) -->
-  <script src="https://unpkg.com/@zxing/browser@0.1.1/umd/index.min.js"></script>
+  <!-- ZXing library untuk decode barcode -->
+  <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
 
   <script type="module" src="app.js"></script>
 </body>

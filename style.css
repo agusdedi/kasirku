@@ -1879,3 +1879,175 @@ input::placeholder { color: var(--muted); }
   .scanner-modal-box { border-radius: 16px 16px 0 0; max-width: 100%; }
   .scanner-viewport { aspect-ratio: 4/3; }
 }
+
+/* =============================================
+   CART SEARCH (Tab Transaksi)
+   ============================================= */
+.cart-search-toggle-row {
+  padding: 8px 16px 4px;
+  flex-shrink: 0;
+}
+.cart-search-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+  transition: border-color 0.15s, color 0.15s;
+  width: 100%;
+  justify-content: center;
+}
+.cart-search-toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
+.cart-search-toggle-btn svg { stroke: currentColor; }
+
+/* Panel search — slide down */
+.cart-search-panel {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease;
+  flex-shrink: 0;
+  border-bottom: 1px solid transparent;
+}
+.cart-search-panel.open {
+  max-height: 360px;
+  border-bottom-color: var(--border);
+}
+
+.cart-search-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 16px 6px;
+  background: var(--surface);
+}
+.cart-search-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.cart-search-input:focus { border-color: var(--accent); }
+.cart-search-input::placeholder { color: var(--muted); }
+.cart-search-close {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 9px;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.cart-search-close:hover { color: var(--red); border-color: var(--red); }
+
+.cart-search-results {
+  overflow-y: auto;
+  max-height: 280px;
+  padding: 4px 8px 8px;
+}
+
+.cart-search-empty {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 16px;
+}
+
+.cart-search-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.1s;
+  gap: 8px;
+}
+.cart-search-item:hover { background: var(--surface2); }
+.cart-search-item.out-of-stock { opacity: 0.4; cursor: not-allowed; }
+
+.cart-search-item-info { flex: 1; min-width: 0; }
+.cart-search-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cart-search-item-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
+.cart-search-item-price {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 500;
+}
+.cart-search-item-cat {
+  font-size: 11px;
+  color: var(--muted);
+}
+.cart-search-item-stock-low {
+  font-size: 10px;
+  color: var(--red);
+  font-weight: 600;
+}
+
+.cart-search-item-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.cart-search-qty-badge {
+  background: var(--accent);
+  color: #111;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 5px;
+  padding: 2px 6px;
+  min-width: 20px;
+  text-align: center;
+}
+.cart-search-add-btn {
+  width: 26px;
+  height: 26px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--green);
+  transition: background 0.15s, border-color 0.15s;
+}
+.cart-search-item:hover .cart-search-add-btn { background: var(--green); color: #111; border-color: var(--green); }
+.cart-search-add-btn.disabled { color: var(--red); }
+
+@media (max-width: 768px) {
+  .cart-search-toggle-row { padding: 6px 12px 2px; }
+  .cart-search-panel.open { max-height: 300px; }
+  .cart-search-results { max-height: 220px; }
+}

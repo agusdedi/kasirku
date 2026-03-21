@@ -883,197 +883,275 @@ window.addEventListener('resize', () => {
   }
 });
 
+
 // ── BARCODE SCANNER ───────────────────────────
-let scannerMode      = 'cart';  // 'add' | 'cart'
-let codeReader       = null;
-let scannerActive    = false;
-let lastScannedCode  = null;
-let scanCooldown     = false;   // debounce: cegah double scan
+let scannerMode     = 'cart';
+let scannerActive   = false;
+let lastScannedCode = null;
+let scanCooldown    = false;
+let scanAnimId      = null;
+let scanCanvas      = null;
+let scanCtx         = null;
+let scanVideo       = null;
+let scanStream      = null;
+let zxingReader     = null;
 
 window.openScanner = async function(mode) {
-  scannerMode   = mode;
-  scannerActive = true;
+  scannerMode     = mode;
+  scannerActive   = true;
   lastScannedCode = null;
-  scanCooldown  = false;
+  scanCooldown    = false;
+
+  const modal = document.getElementById('scannerModal');
 
   // Reset UI
-  const modal     = document.getElementById('scannerModal');
-  const result    = document.getElementById('scannerResult');
-  const addForm   = document.getElementById('scannerAddForm');
-  const cartMsg   = document.getElementById('scannerCartMsg');
+  ['scannerResult','scannerAddForm','scannerCartMsg'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
   const addFields = document.getElementById('scannerAddFields');
-  const hint      = document.getElementById('scannerHint');
+  if (addFields) addFields.style.display = 'none';
 
-  result.style.display    = 'none';
-  addForm.style.display   = 'none';
-  cartMsg.style.display   = 'none';
-  addFields.style.display = 'none';
-  hint.textContent        = 'Posisikan barcode di dalam kotak';
+  const hint = document.getElementById('scannerHint');
+  if (hint) hint.textContent = 'Posisikan barcode di dalam kotak';
 
   document.getElementById('scannerTitle').textContent =
     mode === 'add' ? 'Scan Barcode Barang' : 'Scan untuk Transaksi';
   document.getElementById('scannerSubtitle').textContent =
-    mode === 'add' ? 'Scan kemasan untuk tambah ke daftar barang' : 'Scan kemasan untuk tambah ke keranjang';
+    mode === 'add'
+      ? 'Scan kemasan untuk tambah ke daftar barang'
+      : 'Scan kemasan untuk tambah ke keranjang';
 
   modal.classList.add('active');
 
-  // Mulai kamera
   try {
     await startCamera();
   } catch(e) {
-    showToast('Tidak bisa akses kamera: ' + e.message, 'error');
+    let msg = 'Tidak bisa akses kamera.';
+    if (e.name === 'NotAllowedError')  msg = 'Izin kamera ditolak. Izinkan akses kamera di pengaturan browser.';
+    if (e.name === 'NotFoundError')    msg = 'Kamera tidak ditemukan di perangkat ini.';
+    if (e.name === 'NotReadableError') msg = 'Kamera sedang digunakan aplikasi lain.';
+    showToast(msg, 'error');
     closeScanner();
   }
 }
 
 async function startCamera() {
-  const video = document.getElementById('scannerVideo');
-
-  // Stop stream lama jika ada
   stopCamera();
 
-  // Minta akses kamera — prioritaskan kamera belakang di mobile
-  const constraints = {
+  scanVideo = document.getElementById('scannerVideo');
+
+  const stream = await navigator.mediaDevices.getUserMedia({
     video: {
       facingMode: { ideal: 'environment' },
       width:  { ideal: 1280 },
       height: { ideal: 720 },
     }
-  };
+  });
 
-  const stream = await navigator.mediaDevices.getUserMedia(constraints);
-  video.srcObject = stream;
-  video._stream   = stream;
-  await video.play();
+  scanStream        = stream;
+  scanVideo.srcObject = stream;
+  await scanVideo.play();
 
-  // Mulai decode menggunakan ZXing
-  startDecoding(video);
+  // Buat canvas tersembunyi untuk frame capture
+  if (!scanCanvas) {
+    scanCanvas = document.createElement('canvas');
+    scanCtx    = scanCanvas.getContext('2d', { willReadFrequently: true });
+  }
+
+  // Inisialisasi ZXing reader
+  initZXing();
+  // Mulai loop decode
+  scheduleDecode();
 }
 
-function startDecoding(video) {
-  if (!window.ZXingBrowser) {
-    showToast('Library ZXing belum termuat, coba refresh halaman.', 'error');
+function initZXing() {
+  // ZXing global dari @zxing/library UMD = window.ZXing
+  if (window.ZXing) {
+    try {
+      const hints = new Map();
+      hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
+      zxingReader = new window.ZXing.MultiFormatReader();
+      zxingReader.setHints(hints);
+    } catch(e) {
+      zxingReader = null;
+    }
+  }
+}
+
+function scheduleDecode() {
+  if (!scannerActive) return;
+  // Decode setiap 150ms — cukup responsif tanpa makan CPU berlebihan
+  scanAnimId = setTimeout(decodeFrame, 150);
+}
+
+function decodeFrame() {
+  if (!scannerActive || !scanVideo || scanVideo.readyState < 2) {
+    scheduleDecode();
     return;
   }
 
-  const hints = new Map();
-  // Dukung semua format barcode umum pada produk
-  const formats = [
-    window.ZXingBrowser.BarcodeFormat?.EAN_13,
-    window.ZXingBrowser.BarcodeFormat?.EAN_8,
-    window.ZXingBrowser.BarcodeFormat?.UPC_A,
-    window.ZXingBrowser.BarcodeFormat?.UPC_E,
-    window.ZXingBrowser.BarcodeFormat?.CODE_128,
-    window.ZXingBrowser.BarcodeFormat?.CODE_39,
-    window.ZXingBrowser.BarcodeFormat?.QR_CODE,
-  ].filter(Boolean);
+  const w = scanVideo.videoWidth;
+  const h = scanVideo.videoHeight;
+  if (!w || !h) { scheduleDecode(); return; }
 
-  if (formats.length) hints.set(window.ZXingBrowser.DecodeHintType?.POSSIBLE_FORMATS, formats);
+  scanCanvas.width  = w;
+  scanCanvas.height = h;
+  scanCtx.drawImage(scanVideo, 0, 0, w, h);
 
-  codeReader = new window.ZXingBrowser.BrowserMultiFormatReader(hints);
-
-  codeReader.decodeFromVideoElement(video, (result, err) => {
-    if (!scannerActive || scanCooldown) return;
-    if (result) {
-      const code = result.getText();
-      if (code === lastScannedCode) return; // abaikan scan sama berulang
-      lastScannedCode = code;
-      scanCooldown    = true;
-      onBarcodeDetected(code);
-      // Reset cooldown setelah 1.5 detik
-      setTimeout(() => { scanCooldown = false; }, 1500);
-    }
-  });
+  // Coba native BarcodeDetector dulu (lebih cepat, built-in Chrome/Android)
+  if (window.BarcodeDetector) {
+    window.BarcodeDetector.getSupportedFormats().then(() => {
+      const detector = new window.BarcodeDetector({
+        formats: ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code']
+      });
+      detector.detect(scanCanvas).then(codes => {
+        if (codes.length > 0 && !scanCooldown && scannerActive) {
+          handleDetected(codes[0].rawValue);
+        } else {
+          scheduleDecode();
+        }
+      }).catch(() => { tryZXingDecode(); });
+    }).catch(() => { tryZXingDecode(); });
+  } else {
+    tryZXingDecode();
+  }
 }
 
-function onBarcodeDetected(code) {
-  // Flash visual feedback
-  const viewport = document.querySelector('.scanner-viewport');
-  if (viewport) {
-    viewport.classList.remove('flash');
-    void viewport.offsetWidth; // reflow
-    viewport.classList.add('flash');
-    setTimeout(() => viewport.classList.remove('flash'), 400);
+function tryZXingDecode() {
+  if (!scannerActive) return;
+  if (!zxingReader) { scheduleDecode(); return; }
+
+  try {
+    const imageData = scanCtx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
+    const luminance = new window.ZXing.RGBLuminanceSource(
+      imageData.data, scanCanvas.width, scanCanvas.height
+    );
+    const bitmap  = new window.ZXing.BinaryBitmap(new window.ZXing.HybridBinarizer(luminance));
+    const result  = zxingReader.decode(bitmap);
+    if (result && !scanCooldown && scannerActive) {
+      handleDetected(result.getText());
+    } else {
+      scheduleDecode();
+    }
+  } catch(e) {
+    // NotFoundException normal saat belum ada barcode — lanjut scan
+    scheduleDecode();
+  }
+}
+
+function handleDetected(code) {
+  if (!code || code === lastScannedCode || scanCooldown) return;
+  lastScannedCode = code;
+  scanCooldown    = true;
+
+  // Flash visual
+  const vp = document.querySelector('.scanner-viewport');
+  if (vp) {
+    vp.classList.remove('flash');
+    void vp.offsetWidth;
+    vp.classList.add('flash');
+    setTimeout(() => vp.classList.remove('flash'), 400);
   }
 
-  // Tampilkan kode
+  // Tampilkan kode yang terbaca
   const resultEl = document.getElementById('scannerResult');
-  resultEl.style.display = 'flex';
-  document.getElementById('scannerResultCode').textContent = code;
-  document.getElementById('scannerHint').textContent = '✓ Barcode terdeteksi';
+  if (resultEl) resultEl.style.display = 'flex';
+  const codeEl = document.getElementById('scannerResultCode');
+  if (codeEl) codeEl.textContent = code;
+  const hint = document.getElementById('scannerHint');
+  if (hint) hint.textContent = '✓ Barcode terdeteksi';
 
   if (scannerMode === 'cart') {
     handleCartScan(code);
   } else {
     handleAddScan(code);
   }
+
+  // Reset cooldown setelah 1.5 detik, lanjut scan
+  setTimeout(() => { scanCooldown = false; }, 1500);
 }
 
 // Mode CART: langsung tambah ke keranjang, tanpa konfirmasi
 function handleCartScan(code) {
-  // Cari barang berdasarkan barcode field
   const item = items.find(i => i.barcode === code);
+  const cartMsg = document.getElementById('scannerCartMsg');
 
   if (item) {
     addToCart(item.id);
-    const cartMsg = document.getElementById('scannerCartMsg');
-    cartMsg.style.display = 'block';
-    cartMsg.querySelector('.scanner-found-msg').textContent =
-      `✓ "${item.name}" ditambahkan ke keranjang`;
-    document.getElementById('scannerHint').textContent = 'Scan barang berikutnya...';
-    // Reset untuk scan berikutnya setelah 1 detik
+    if (cartMsg) {
+      cartMsg.style.display = 'block';
+      const msgEl = cartMsg.querySelector('.scanner-found-msg');
+      if (msgEl) msgEl.innerHTML = `<span style="color:var(--green)">✓ "${item.name}" ditambahkan</span>`;
+    }
+    const hint = document.getElementById('scannerHint');
+    if (hint) hint.textContent = 'Scan barang berikutnya...';
+
     setTimeout(() => {
-      cartMsg.style.display = 'none';
-      document.getElementById('scannerResult').style.display = 'none';
-      document.getElementById('scannerResultCode').textContent = '';
+      if (cartMsg) cartMsg.style.display = 'none';
+      const resultEl = document.getElementById('scannerResult');
+      if (resultEl) resultEl.style.display = 'none';
+      const codeEl = document.getElementById('scannerResultCode');
+      if (codeEl) codeEl.textContent = '';
       lastScannedCode = null;
+      const hint2 = document.getElementById('scannerHint');
+      if (hint2) hint2.textContent = 'Posisikan barcode di dalam kotak';
+      scheduleDecode();
     }, 1000);
   } else {
-    // Barang tidak ditemukan di daftar
-    const cartMsg = document.getElementById('scannerCartMsg');
-    cartMsg.style.display = 'block';
-    cartMsg.querySelector('.scanner-found-msg').innerHTML =
-      `<span style="color:var(--red)">Barang tidak ditemukan di daftar.<br/>Tambahkan dulu via tab Barang.</span>`;
+    if (cartMsg) {
+      cartMsg.style.display = 'block';
+      const msgEl = cartMsg.querySelector('.scanner-found-msg');
+      if (msgEl) msgEl.innerHTML =
+        `<span style="color:var(--red)">Barang tidak ditemukan.<br/>Tambahkan dulu via tab Barang.</span>`;
+    }
     setTimeout(() => {
-      cartMsg.style.display = 'none';
-      document.getElementById('scannerResult').style.display = 'none';
+      if (cartMsg) cartMsg.style.display = 'none';
+      const resultEl = document.getElementById('scannerResult');
+      if (resultEl) resultEl.style.display = 'none';
       lastScannedCode = null;
+      scheduleDecode();
     }, 2000);
   }
 }
 
-// Mode ADD: cek apakah sudah ada, lalu tampilkan form konfirmasi
+// Mode ADD: cek apakah sudah ada, tampilkan form konfirmasi
 function handleAddScan(code) {
   const addForm   = document.getElementById('scannerAddForm');
   const addFields = document.getElementById('scannerAddFields');
   const foundMsg  = document.getElementById('scannerFoundMsg');
 
-  addForm.style.display = 'block';
+  if (addForm) addForm.style.display = 'block';
 
   const existing = items.find(i => i.barcode === code);
   if (existing) {
-    // Sudah ada di daftar
-    foundMsg.innerHTML = `<span style="color:var(--green)">✓ "${existing.name}" sudah ada di daftar barang.</span>`;
-    addFields.style.display = 'none';
+    if (foundMsg) foundMsg.innerHTML =
+      `<span style="color:var(--green)">✓ "${existing.name}" sudah ada di daftar.</span>`;
+    if (addFields) addFields.style.display = 'none';
+
     setTimeout(() => {
-      addForm.style.display = 'none';
-      document.getElementById('scannerResult').style.display = 'none';
+      if (addForm) addForm.style.display = 'none';
+      const resultEl = document.getElementById('scannerResult');
+      if (resultEl) resultEl.style.display = 'none';
       lastScannedCode = null;
-      document.getElementById('scannerHint').textContent = 'Posisikan barcode di dalam kotak';
+      const hint = document.getElementById('scannerHint');
+      if (hint) hint.textContent = 'Posisikan barcode di dalam kotak';
+      scheduleDecode();
     }, 2000);
   } else {
-    // Barang baru — tampilkan form isian
-    foundMsg.textContent = `Barcode baru. Isi detail barang:`;
-    addFields.style.display = 'flex';
-    document.getElementById('scanNewName').value     = '';
+    if (foundMsg) foundMsg.textContent = `Barcode baru — isi detail barang:`;
+    if (addFields) addFields.style.display = 'flex';
+
+    const nameEl = document.getElementById('scanNewName');
     document.getElementById('scanNewPrice').value    = '';
     document.getElementById('scanNewStock').value    = '';
     document.getElementById('scanNewCategory').value = '';
-    setTimeout(() => document.getElementById('scanNewName').focus(), 100);
+    if (nameEl) { nameEl.value = ''; setTimeout(() => nameEl.focus(), 100); }
+    // Hentikan loop sementara — tunggu user isi form
+    if (scanAnimId) { clearTimeout(scanAnimId); scanAnimId = null; }
   }
 }
 
-// Konfirmasi simpan barang baru dari scan
 window.confirmAddItem = async function() {
   const name     = document.getElementById('scanNewName').value.trim();
   const price    = parseFloat(document.getElementById('scanNewPrice').value);
@@ -1081,33 +1159,36 @@ window.confirmAddItem = async function() {
   const category = document.getElementById('scanNewCategory').value.trim() || 'Umum';
   const barcode  = lastScannedCode;
 
-  if (!name)             return showToast('Nama barang wajib diisi!', 'error');
+  if (!name)              return showToast('Nama barang wajib diisi!', 'error');
   if (!price || price<=0) return showToast('Harga harus lebih dari 0!', 'error');
-  if (!barcode)          return showToast('Barcode tidak valid.', 'error');
+  if (!barcode)           return showToast('Barcode tidak valid.', 'error');
 
   try {
     await addDoc(collection(db, 'items'), {
-      name, price, stock, category,
-      barcode,
+      name, price, stock, category, barcode,
       createdAt: serverTimestamp()
     });
     showToast(`"${name}" berhasil ditambahkan!`);
-    // Reset dan lanjut scan
     resumeScanner();
   } catch(e) {
     showToast('Gagal simpan: ' + e.message, 'error');
   }
 }
 
-// Lanjut scan lagi
 window.resumeScanner = function() {
   lastScannedCode = null;
   scanCooldown    = false;
-  document.getElementById('scannerResult').style.display    = 'none';
-  document.getElementById('scannerAddForm').style.display   = 'none';
-  document.getElementById('scannerCartMsg').style.display   = 'none';
-  document.getElementById('scannerResultCode').textContent  = '';
-  document.getElementById('scannerHint').textContent        = 'Posisikan barcode di dalam kotak';
+  ['scannerResult','scannerAddForm','scannerCartMsg'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  const addFields = document.getElementById('scannerAddFields');
+  if (addFields) addFields.style.display = 'none';
+  const codeEl = document.getElementById('scannerResultCode');
+  if (codeEl) codeEl.textContent = '';
+  const hint = document.getElementById('scannerHint');
+  if (hint) hint.textContent = 'Posisikan barcode di dalam kotak';
+  scheduleDecode();
 }
 
 window.closeScanner = function() {
@@ -1118,23 +1199,105 @@ window.closeScanner = function() {
 }
 
 function stopCamera() {
-  // Stop ZXing reader
-  if (codeReader) {
-    try { codeReader.reset(); } catch(e) {}
-    codeReader = null;
+  if (scanAnimId) { clearTimeout(scanAnimId); scanAnimId = null; }
+  zxingReader = null;
+  if (scanStream) {
+    scanStream.getTracks().forEach(t => t.stop());
+    scanStream = null;
   }
-  // Stop video stream
-  const video = document.getElementById('scannerVideo');
-  if (video && video._stream) {
-    video._stream.getTracks().forEach(t => t.stop());
-    video._stream  = null;
-    video.srcObject = null;
+  if (scanVideo) {
+    scanVideo.srcObject = null;
+    scanVideo = null;
   }
 }
 
-// Tutup scanner saat klik overlay
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('scannerModal')?.addEventListener('click', (e) => {
+  document.getElementById('scannerModal')?.addEventListener('click', e => {
     if (e.target.id === 'scannerModal') closeScanner();
   });
 });
+
+// ── CART SEARCH ───────────────────────────────
+let cartSearchOpen = false;
+
+window.toggleCartSearch = function() {
+  const panel = document.getElementById('cartSearchPanel');
+  if (!panel) return;
+  cartSearchOpen = !cartSearchOpen;
+  panel.classList.toggle('open', cartSearchOpen);
+  if (cartSearchOpen) {
+    setTimeout(() => document.getElementById('cartSearchInput')?.focus(), 150);
+    renderCartSearch();
+  }
+}
+
+window.closeCartSearch = function() {
+  cartSearchOpen = false;
+  const panel = document.getElementById('cartSearchPanel');
+  if (panel) panel.classList.remove('open');
+  const input = document.getElementById('cartSearchInput');
+  if (input) input.value = '';
+  const results = document.getElementById('cartSearchResults');
+  if (results) results.innerHTML = '';
+}
+
+window.renderCartSearch = function() {
+  const q       = (document.getElementById('cartSearchInput')?.value || '').toLowerCase().trim();
+  const results = document.getElementById('cartSearchResults');
+  if (!results) return;
+
+  if (!q) {
+    // Tampilkan semua barang saat kosong
+    const all = items.slice(0, 20);
+    if (all.length === 0) {
+      results.innerHTML = '<div class="cart-search-empty">Belum ada barang di daftar.</div>';
+      return;
+    }
+    results.innerHTML = all.map(item => cartSearchItemHTML(item)).join('');
+    return;
+  }
+
+  const filtered = items.filter(i =>
+    i.name.toLowerCase().includes(q) ||
+    i.category.toLowerCase().includes(q) ||
+    (i.barcode && i.barcode.includes(q))
+  );
+
+  if (filtered.length === 0) {
+    results.innerHTML = `<div class="cart-search-empty">Barang "${q}" tidak ditemukan.</div>`;
+    return;
+  }
+
+  results.innerHTML = filtered.map(item => cartSearchItemHTML(item)).join('');
+}
+
+function cartSearchItemHTML(item) {
+  const inCart = cart.find(c => c.itemId === item.id);
+  const qty    = inCart ? inCart.qty : 0;
+  return `
+    <div class="cart-search-item ${item.stock <= 0 ? 'out-of-stock' : ''}" onclick="addToCartFromSearch('${item.id}')">
+      <div class="cart-search-item-info">
+        <div class="cart-search-item-name">${item.name}</div>
+        <div class="cart-search-item-meta">
+          <span class="cart-search-item-price">${formatRp(item.price)}</span>
+          <span class="cart-search-item-cat">${item.category}</span>
+          ${item.stock <= 5 ? `<span class="cart-search-item-stock-low">Stok: ${item.stock}</span>` : ''}
+        </div>
+      </div>
+      <div class="cart-search-item-right">
+        ${qty > 0 ? `<span class="cart-search-qty-badge">${qty}</span>` : ''}
+        <div class="cart-search-add-btn ${item.stock <= 0 ? 'disabled' : ''}">
+          ${item.stock <= 0 ? '✕' : '+'}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+window.addToCartFromSearch = function(itemId) {
+  const item = items.find(i => i.id === itemId);
+  if (!item || item.stock <= 0) return;
+  addToCart(itemId);
+  // Re-render hasil search agar qty badge update
+  renderCartSearch();
+}
