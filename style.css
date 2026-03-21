@@ -2051,3 +2051,34 @@ input::placeholder { color: var(--muted); }
   .cart-search-panel.open { max-height: 300px; }
   .cart-search-results { max-height: 220px; }
 }
+
+/* =============================================
+   OVERRIDE html5-qrcode DEFAULT UI
+   Sembunyikan semua elemen bawaan library
+   ============================================= */
+#scannerQrRegion {
+  width: 100% !important;
+  height: 100% !important;
+  border: none !important;
+}
+#scannerQrRegion video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  border: none !important;
+}
+/* Sembunyikan header bawaan html5-qrcode */
+#scannerQrRegion > div:first-child {
+  display: none !important;
+}
+/* Sembunyikan scan region overlay bawaan */
+#qr-shaded-region {
+  display: none !important;
+}
+/* Sembunyikan tombol dan link bawaan */
+#scannerQrRegion img,
+#scannerQrRegion button,
+#scannerQrRegion select,
+#scannerQrRegion a {
+  display: none !important;
+}

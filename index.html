@@ -591,7 +591,8 @@
 
       <!-- Video feed -->
       <div class="scanner-viewport">
-        <video id="scannerVideo" autoplay muted playsinline></video>
+        <!-- html5-qrcode akan inject video ke dalam div ini -->
+        <div id="scannerQrRegion"></div>
         <div class="scanner-frame">
           <div class="scanner-corner tl"></div>
           <div class="scanner-corner tr"></div>
@@ -645,8 +646,8 @@
     </div>
   </div>
 
-  <!-- ZXing library untuk decode barcode -->
-  <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
+  <!-- html5-qrcode: library scan barcode/QR paling reliable untuk mobile -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 
   <script type="module" src="app.js"></script>
 </body>
