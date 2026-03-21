@@ -4,23 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sistem Kasir</title>
-  <!-- Favicon -->
-  <!-- Favicon — urutan penting untuk Safari iOS -->
-  <!-- Safari membaca ICO langsung dari root, tag ini sebagai hint tambahan -->
-  <link rel="shortcut icon" href="/favicon.ico" />
-  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-  <!-- SVG favicon untuk browser modern (Chrome, Firefox, Edge) -->
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <!-- Apple Touch Icon untuk iOS home screen & Safari tab -->
-  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-  <link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152x152.png" />
-  <link rel="apple-touch-icon" sizes="120x120" href="/apple-touch-icon-120x120.png" />
-  <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png" />
-  <link rel="icon" type="image/png" sizes="192x192" href="/android-chrome-192x192.png" />
-  <link rel="icon" type="image/png" sizes="512x512" href="/android-chrome-512x512.png" />
-  <link rel="manifest" href="site.webmanifest" />
+    <!-- Favicon — ?v=202603210651 memaksa Safari reload (cache-busting) -->
+    <!-- Safari iOS: baca apple-touch-icon TANPA sizes pertama, atau yang terbesar -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=202603210651" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=202603210651" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152x152.png?v=202603210651" />
+    <link rel="apple-touch-icon" sizes="120x120" href="/apple-touch-icon-120x120.png?v=202603210651" />
+    <!-- Standard favicon untuk desktop browser termasuk Safari macOS -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=202603210651" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=202603210651" />
+    <link rel="shortcut icon" href="/favicon.ico?v=202603210651" />
+    <!-- Manifest untuk Android/Chrome -->
+    <link rel="manifest" href="/site.webmanifest?v=202603210651" />
   <link rel="stylesheet" href="style.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
