@@ -943,15 +943,26 @@ let _manualOpen  = false;
 
 // ── INIT ZXING ────────────────────────────────
 // ZXing dari @zxing/library UMD expose sebagai window.ZXing
+// Throttle counter — ZXing hanya decode setiap N frame
+let _frameCount = 0;
+const _DECODE_EVERY = 2; // decode setiap 2 frame (~15fps decode pada 30fps video)
+
+// Canvas crop — decode hanya area tengah, bukan full frame
+let _cropCanvas = null;
+let _cropCtx    = null;
+const _CROP_SIZE = 400; // pixel — cukup besar untuk barcode tapi ringan diproses
+
 function _initZXing() {
   if (_zxingReader) return true;
   try {
     const ZXing = window.ZXing;
     if (!ZXing || !ZXing.MultiFormatReader) return false;
     const hints = new Map();
+    // TRY_HARDER: coba lebih keras decode meski barcode miring/sebagian
     hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    // Batasi format — makin sedikit format, makin cepat decode
     hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-      ZXing.BarcodeFormat.EAN_13,
+      ZXing.BarcodeFormat.EAN_13,   // paling umum di produk Indonesia
       ZXing.BarcodeFormat.EAN_8,
       ZXing.BarcodeFormat.UPC_A,
       ZXing.BarcodeFormat.UPC_E,
@@ -961,6 +972,11 @@ function _initZXing() {
     ]);
     _zxingReader = new ZXing.MultiFormatReader();
     _zxingReader.setHints(hints);
+    // Siapkan canvas crop sekali saja
+    _cropCanvas        = document.createElement('canvas');
+    _cropCanvas.width  = _CROP_SIZE;
+    _cropCanvas.height = _CROP_SIZE;
+    _cropCtx = _cropCanvas.getContext('2d', { willReadFrequently: true });
     return true;
   } catch(e) {
     return false;
@@ -1097,18 +1113,17 @@ function _scanLoop() {
     return;
   }
 
-  // Capture frame ke canvas
-  const w = _video.videoWidth;
-  const h = _video.videoHeight;
-  if (_canvas.width !== w || _canvas.height !== h) {
-    _canvas.width  = w;
-    _canvas.height = h;
-  }
-  _ctx.drawImage(_video, 0, 0, w, h);
+  _frameCount++;
 
   if (_useNative && _detector) {
     // ── PATH A: Native BarcodeDetector (Android Chrome) ──
-    // Sangat cepat, hardware-accelerated, ~5ms per frame
+    // Hardware-accelerated, decode setiap frame karena sudah sangat cepat
+    const w = _video.videoWidth;
+    const h = _video.videoHeight;
+    if (_canvas.width !== w || _canvas.height !== h) {
+      _canvas.width = w; _canvas.height = h;
+    }
+    _ctx.drawImage(_video, 0, 0, w, h);
     _detector.detect(_canvas)
       .then(results => {
         if (results.length > 0 && scannerRunning && !scanCooldown) {
@@ -1120,32 +1135,58 @@ function _scanLoop() {
       .catch(() => {
         if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
       });
+
   } else if (_zxingReader) {
-    // ── PATH B: ZXing dari ImageData (iOS Safari/Chrome) ──
-    // Decode SYNCHRONOUS langsung dari pixel data — tidak ada blob/URL overhead
-    // Ini yang membuat iOS bisa quick scan
+    // ── PATH B: ZXing (iOS Safari/Chrome) ──
+    // Throttle: skip frame ganjil agar CPU tidak penuh
+    if (_frameCount % _DECODE_EVERY !== 0) {
+      _rafId = requestAnimationFrame(_scanLoop);
+      return;
+    }
+
+    const vw = _video.videoWidth;
+    const vh = _video.videoHeight;
+
+    // Crop area tengah saja — barcode selalu diarahkan ke kotak tengah
+    // Ini mengurangi pixel yang diproses dari ~900K menjadi ~160K (6x lebih cepat)
+    const cropSize = Math.min(vw, vh, _CROP_SIZE * 2); // ambil area tengah
+    const cropX    = Math.floor((vw - cropSize) / 2);
+    const cropY    = Math.floor((vh - cropSize) / 2);
+
+    // Gambar area crop ke canvas kecil (_CROP_SIZE x _CROP_SIZE)
+    _cropCtx.drawImage(
+      _video,
+      cropX, cropY, cropSize, cropSize,   // source: area tengah video
+      0, 0, _CROP_SIZE, _CROP_SIZE        // dest: canvas kecil 400x400
+    );
+
     try {
-      const imageData = _ctx.getImageData(0, 0, w, h);
+      const imageData = _cropCtx.getImageData(0, 0, _CROP_SIZE, _CROP_SIZE);
       const ZXing     = window.ZXing;
-      const luminance = new ZXing.RGBLuminanceSource(imageData.data, w, h);
-      const bitmap    = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminance));
-      const result    = _zxingReader.decode(bitmap);
+      const luminance = new ZXing.RGBLuminanceSource(
+        imageData.data, _CROP_SIZE, _CROP_SIZE
+      );
+      const bitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminance));
+      const result = _zxingReader.decode(bitmap);
       if (result && scannerRunning && !scanCooldown) {
         _onDetected(result.getText());
       } else if (scannerRunning) {
         _rafId = requestAnimationFrame(_scanLoop);
       }
     } catch(e) {
-      // NotFoundException = normal, belum ada barcode di frame
+      // NotFoundException — normal saat tidak ada barcode di frame
       if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
     }
+
   } else {
-    // Tidak ada engine — coba init ZXing lagi (mungkin script belum selesai load)
+    // Engine belum siap — coba init ZXing lagi
     if (_initZXing()) {
-      if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
+      _frameCount = 0;
+      _rafId = requestAnimationFrame(_scanLoop);
     } else {
-      // ZXing belum load, tunggu sebentar
-      setTimeout(() => { if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop); }, 500);
+      setTimeout(() => {
+        if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
+      }, 300);
     }
   }
 }
@@ -1370,8 +1411,11 @@ function _stopAll() {
   _torchTrack = null;
   _canvas = null;
   _ctx    = null;
-  // Reset ZXing reader
+  // Reset ZXing reader dan crop canvas
   _zxingReader = null;
+  _cropCanvas  = null;
+  _cropCtx     = null;
+  _frameCount  = 0;
   // Clear region
   const region = document.getElementById('scannerQrRegion');
   if (region) region.innerHTML = '';
