@@ -695,10 +695,8 @@
     </div>
   </div>
 
-  <!-- html5-qrcode sebagai fallback decode engine -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
-  <!-- BarcodeDetector polyfill untuk iOS (tidak punya native BarcodeDetector) -->
-  <script src="https://cdn.jsdelivr.net/npm/barcode-detector@2/dist/es2019/barcode-detector.min.js"></script>
+  <!-- ZXing: decode engine cepat untuk iOS (decode langsung dari ImageData) -->
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js"></script>
 
   <!-- Theme script: NON-module agar bisa dipanggil dari onclick HTML -->
   <script>

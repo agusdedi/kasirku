@@ -919,8 +919,9 @@ window.addEventListener('resize', () => {
 
 
 // ── BARCODE SCANNER ───────────────────────────
-// Menggunakan getUserMedia langsung + BarcodeDetector (native, cepat)
-// Fallback ke html5-qrcode jika BarcodeDetector tidak tersedia
+// Android Chrome : native BarcodeDetector (sangat cepat, ~5ms/frame)
+// iOS Safari/Chrome: ZXing JS decode dari ImageData (cepat, ~30ms/frame)
+// Keduanya pakai requestAnimationFrame loop tanpa overhead blob/URL
 // ─────────────────────────────────────────────
 
 let scannerMode     = 'cart';
@@ -928,18 +929,43 @@ let scannerRunning  = false;
 let lastScannedCode = null;
 let scanCooldown    = false;
 
-// Stream & decode state
 let _stream      = null;
 let _video       = null;
 let _canvas      = null;
 let _ctx         = null;
 let _rafId       = null;
-let _detector    = null;   // native BarcodeDetector
-let _h5scanner   = null;   // html5-qrcode fallback
+let _detector    = null;   // native BarcodeDetector (Android Chrome)
+let _zxingReader = null;   // ZXing fallback (iOS)
 let _useNative   = false;
 let _torchTrack  = null;
 let _zoomLevel   = 1;
 let _manualOpen  = false;
+
+// ── INIT ZXING ────────────────────────────────
+// ZXing dari @zxing/library UMD expose sebagai window.ZXing
+function _initZXing() {
+  if (_zxingReader) return true;
+  try {
+    const ZXing = window.ZXing;
+    if (!ZXing || !ZXing.MultiFormatReader) return false;
+    const hints = new Map();
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+      ZXing.BarcodeFormat.EAN_13,
+      ZXing.BarcodeFormat.EAN_8,
+      ZXing.BarcodeFormat.UPC_A,
+      ZXing.BarcodeFormat.UPC_E,
+      ZXing.BarcodeFormat.CODE_128,
+      ZXing.BarcodeFormat.CODE_39,
+      ZXing.BarcodeFormat.QR_CODE,
+    ]);
+    _zxingReader = new ZXing.MultiFormatReader();
+    _zxingReader.setHints(hints);
+    return true;
+  } catch(e) {
+    return false;
+  }
+}
 
 // ── OPEN SCANNER ──────────────────────────────
 window.openScanner = async function(mode) {
@@ -947,7 +973,6 @@ window.openScanner = async function(mode) {
   lastScannedCode = null;
   scanCooldown    = false;
 
-  // Set judul
   document.getElementById('scannerTitle').textContent =
     mode === 'add' ? 'Scan Barcode Barang' : 'Scan untuk Transaksi';
   document.getElementById('scannerSubtitle').textContent =
@@ -961,29 +986,21 @@ window.openScanner = async function(mode) {
   try {
     await _startStream();
   } catch(e) {
-    // Cek apakah stream sebenarnya sudah berjalan — iOS sering throw tapi kamera jalan
+    // Cek apakah stream sebenarnya sudah berjalan (iOS kadang throw tapi kamera jalan)
     if (_stream && _stream.active && scannerRunning) {
-      console.warn('Scanner error ignored (stream active):', e.name);
+      console.warn('Scanner error ignored — stream already active:', e.name);
       return;
     }
-
     scannerRunning = false;
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     let msg = 'Tidak bisa akses kamera.';
-
     if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError' ||
         /NotAllowed|Permission/i.test(e.toString())) {
       msg = isIOS
         ? 'Akses kamera ditolak. Buka Settings → Safari → Kamera → Izinkan.'
         : 'Izin kamera ditolak. Klik 🔒 di address bar → izinkan Kamera → refresh.';
-    } else if (e.name === 'NotFoundError' || /NotFound/i.test(e.toString())) {
-      msg = 'Kamera tidak ditemukan di perangkat ini.';
-    } else if (e.name === 'NotReadableError' || /NotReadable|busy/i.test(e.toString())) {
-      msg = 'Kamera sedang dipakai aplikasi lain. Tutup dulu lalu coba lagi.';
-    } else if (/HTTPS|secure/i.test(e.message || '')) {
-      msg = 'Kamera hanya bisa diakses via HTTPS.';
-    }
-
+    } else if (e.name === 'NotFoundError')    { msg = 'Kamera tidak ditemukan.'; }
+    else if (e.name === 'NotReadableError')   { msg = 'Kamera dipakai aplikasi lain.'; }
     const hintEl = document.getElementById('scannerHint');
     if (hintEl) {
       hintEl.textContent   = '❌ ' + msg;
@@ -997,76 +1014,75 @@ window.openScanner = async function(mode) {
 async function _startStream() {
   _stopAll();
 
-  // Buat video element dengan atribut wajib iOS
   const region = document.getElementById('scannerQrRegion');
   region.innerHTML = '';
   _video = document.createElement('video');
-  _video.setAttribute('playsinline',       '');  // WAJIB iOS — cegah fullscreen
-  _video.setAttribute('webkit-playsinline','');  // iOS < 10
-  _video.setAttribute('muted',             '');
-  _video.setAttribute('autoplay',          '');
+  _video.setAttribute('playsinline',        '');
+  _video.setAttribute('webkit-playsinline', '');
+  _video.setAttribute('muted',              '');
+  _video.setAttribute('autoplay',           '');
   _video.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
   region.appendChild(_video);
 
-  // Pastikan mediaDevices tersedia (butuh HTTPS)
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('Camera API tidak tersedia — pastikan HTTPS');
   }
 
-  // iOS Safari SANGAT strict soal constraints
-  // Gunakan constraint paling sederhana dulu, lalu upgrade
+  // Progressive constraints — iOS hanya terima yang simpel
   let stream = null;
-
-  // Attempt 1: facingMode environment (kamera belakang) — paling umum
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: 'environment' } }
     });
   } catch(e1) {
     if (e1.name === 'NotAllowedError' || e1.name === 'PermissionDeniedError') throw e1;
-    // Attempt 2: video:true — constraint paling minimal, selalu jalan jika ada kamera
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    } catch(e2) {
-      throw e2; // Benar-benar tidak bisa — lempar ke caller
-    }
+    try { stream = await navigator.mediaDevices.getUserMedia({ video: true }); }
+    catch(e2) { throw e2; }
   }
 
-  _stream      = stream;
+  _stream          = stream;
   _video.srcObject = stream;
-  _torchTrack  = stream.getVideoTracks()[0];
+  _torchTrack      = stream.getVideoTracks()[0];
+  _canvas          = document.createElement('canvas');
+  _ctx             = _canvas.getContext('2d', { willReadFrequently: true });
 
-  // Siapkan canvas
-  _canvas = document.createElement('canvas');
-  _ctx    = _canvas.getContext('2d', { willReadFrequently: true });
-
-  // Set scannerRunning SEBELUM play agar catch di openScanner tahu stream sudah aktif
+  // scannerRunning = true SEBELUM play agar catch tahu stream sudah aktif
   scannerRunning = true;
 
-  // Play — iOS sering throw tapi video tetap berjalan, jadi abaikan semua error
-  try { await _video.play(); } catch(e) { /* iOS quirk — abaikan */ }
+  // iOS: play() sering throw tapi video tetap jalan — abaikan semua error
+  try { await _video.play(); } catch(e) { /* iOS quirk */ }
 
-  // Tunggu video benar-benar punya dimensi (max 5 detik)
+  // Tunggu video punya dimensi (max 5 detik)
   await new Promise(resolve => {
+    const t = setTimeout(resolve, 5000);
     const check = () => {
-      if (_video.videoWidth > 0) return resolve();
-      setTimeout(check, 100);
+      if (_video && _video.videoWidth > 0) { clearTimeout(t); resolve(); }
+      else setTimeout(check, 80);
     };
     check();
-    setTimeout(resolve, 5000); // timeout fallback
   });
 
-  // Init BarcodeDetector — native (Android Chrome) atau polyfill (iOS via jsdelivr)
+  // Pilih engine decode
+  // 1. Native BarcodeDetector — Android Chrome, sangat cepat
   _useNative = false;
   _detector  = null;
   if ('BarcodeDetector' in window) {
     try {
       const supported = await BarcodeDetector.getSupportedFormats();
-      const wanted    = ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code'];
-      const formats   = supported.length ? wanted.filter(f => supported.includes(f)) : wanted;
+      // Cek apakah ini native (bukan polyfill) — native biasanya list < 20 format
+      // Polyfill biasanya return [] atau list sangat panjang
+      const wanted  = ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code'];
+      const formats = supported.length > 0
+        ? wanted.filter(f => supported.includes(f))
+        : wanted;
       _detector  = new BarcodeDetector({ formats: formats.length ? formats : wanted });
       _useNative = true;
-    } catch(e) { /* gunakan html5-qrcode fallback */ }
+    } catch(e) { /* fallback ke ZXing */ }
+  }
+
+  // 2. ZXing — iOS Safari/Chrome, decode dari ImageData langsung (cepat)
+  if (!_useNative) {
+    _initZXing();
   }
 
   _scanLoop();
@@ -1076,92 +1092,62 @@ async function _startStream() {
 function _scanLoop() {
   if (!scannerRunning) return;
 
-  const ready = _video &&
-    _video.readyState >= 2 &&
-    _video.videoWidth > 0 &&
-    !scanCooldown;
-
-  if (!ready) {
+  if (!_video || _video.readyState < 2 || _video.videoWidth === 0 || scanCooldown) {
     _rafId = requestAnimationFrame(_scanLoop);
     return;
   }
 
-  // Capture frame
+  // Capture frame ke canvas
   const w = _video.videoWidth;
   const h = _video.videoHeight;
-  _canvas.width  = w;
-  _canvas.height = h;
+  if (_canvas.width !== w || _canvas.height !== h) {
+    _canvas.width  = w;
+    _canvas.height = h;
+  }
   _ctx.drawImage(_video, 0, 0, w, h);
 
   if (_useNative && _detector) {
-    // Native BarcodeDetector — async, sangat cepat
+    // ── PATH A: Native BarcodeDetector (Android Chrome) ──
+    // Sangat cepat, hardware-accelerated, ~5ms per frame
     _detector.detect(_canvas)
       .then(results => {
         if (results.length > 0 && scannerRunning && !scanCooldown) {
           _onDetected(results[0].rawValue);
+        } else if (scannerRunning) {
+          _rafId = requestAnimationFrame(_scanLoop);
         }
-        if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
       })
       .catch(() => {
         if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
       });
-  } else {
-    // Fallback: html5-qrcode decode (jika tersedia)
-    _decodeWithHtml5(w, h);
-  }
-}
-
-function _decodeWithHtml5(w, h) {
-  if (typeof Html5Qrcode === 'undefined') {
-    if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
-    return;
-  }
-
-  if (!_h5scanner) {
-    // Buat instance tanpa attach ke DOM
-    _h5scanner = new Html5Qrcode('__dummy__', {
-      verbose: false,
-      experimentalFeatures: { useBarCodeDetectorIfSupported: false }
-    });
-  }
-
-  _h5scanner.scanFile
-    ? null // tidak pakai scanFile
-    : null;
-
-  // Decode langsung dari ImageData via internal API
-  const imageData = _ctx.getImageData(0, 0, w, h);
-  // Encode ke blob lalu decode
-  _canvas.toBlob(blob => {
-    if (!blob || !scannerRunning) {
-      if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
-      return;
-    }
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      if (!_h5scanner || !scannerRunning) {
-        if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
-        return;
+  } else if (_zxingReader) {
+    // ── PATH B: ZXing dari ImageData (iOS Safari/Chrome) ──
+    // Decode SYNCHRONOUS langsung dari pixel data — tidak ada blob/URL overhead
+    // Ini yang membuat iOS bisa quick scan
+    try {
+      const imageData = _ctx.getImageData(0, 0, w, h);
+      const ZXing     = window.ZXing;
+      const luminance = new ZXing.RGBLuminanceSource(imageData.data, w, h);
+      const bitmap    = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminance));
+      const result    = _zxingReader.decode(bitmap);
+      if (result && scannerRunning && !scanCooldown) {
+        _onDetected(result.getText());
+      } else if (scannerRunning) {
+        _rafId = requestAnimationFrame(_scanLoop);
       }
-      _h5scanner.scanFileV2(img, false)
-        .then(result => {
-          if (result && result.decodedText && scannerRunning && !scanCooldown) {
-            _onDetected(result.decodedText);
-          }
-          if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
-        })
-        .catch(() => {
-          if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
-        });
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
+    } catch(e) {
+      // NotFoundException = normal, belum ada barcode di frame
       if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
-    };
-    img.src = url;
-  }, 'image/jpeg', 0.85);
+    }
+  } else {
+    // Tidak ada engine — coba init ZXing lagi (mungkin script belum selesai load)
+    if (_initZXing()) {
+      if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop);
+    } else {
+      // ZXing belum load, tunggu sebentar
+      setTimeout(() => { if (scannerRunning) _rafId = requestAnimationFrame(_scanLoop); }, 500);
+    }
+  }
 }
 
 // ── DETECTED ──────────────────────────────────
@@ -1384,11 +1370,8 @@ function _stopAll() {
   _torchTrack = null;
   _canvas = null;
   _ctx    = null;
-  // Clear html5-qrcode instance
-  if (_h5scanner) {
-    try { _h5scanner.clear(); } catch(e) {}
-    _h5scanner = null;
-  }
+  // Reset ZXing reader
+  _zxingReader = null;
   // Clear region
   const region = document.getElementById('scannerQrRegion');
   if (region) region.innerHTML = '';
